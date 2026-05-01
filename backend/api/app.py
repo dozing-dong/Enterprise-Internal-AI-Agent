@@ -1,11 +1,6 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend.config import (
-    FRONTEND_DIR,
-)
 from backend.runtime import DemoRuntime, create_demo_runtime
 from backend.storage.history import (
     build_history_path,
@@ -95,16 +90,6 @@ def get_demo_runtime() -> DemoRuntime:
 def startup_event() -> None:
     """应用启动时提前初始化 RAG 所需对象。"""
     get_demo_runtime()
-    FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
-
-
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-
-
-@app.get("/", include_in_schema=False)
-def home_page():
-    """返回前端首页。"""
-    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.get("/api")

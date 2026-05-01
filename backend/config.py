@@ -5,7 +5,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 HISTORY_DIR = PROJECT_ROOT / "chat_history"
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 EXECUTION_MODE = "langgraph"
 MODEL_PROVIDER = "bedrock"
