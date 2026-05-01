@@ -19,7 +19,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     >
       {!isUser && (
         <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full glass-soft">
-          <Bot className="h-4 w-4 text-blue-300" />
+          <Bot className="h-4 w-4 text-primary/85" />
         </div>
       )}
 
@@ -46,9 +46,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </p>
           ) : message.isStreaming && !isUser ? (
             <div className="flex items-center gap-1.5 py-0.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60 [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60 [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground/40 [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground/40 [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground/40" />
             </div>
           ) : null}
         </div>
@@ -63,7 +63,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
       {isUser && (
         <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full glass-soft">
-          <User className="h-4 w-4 text-white/80" />
+          <User className="h-4 w-4 text-foreground/70" />
         </div>
       )}
     </div>

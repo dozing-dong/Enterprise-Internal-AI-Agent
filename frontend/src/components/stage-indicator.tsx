@@ -50,9 +50,9 @@ export function StageIndicator({
       role="status"
       aria-live="polite"
     >
-      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-300" />
-      <Icon className="h-3.5 w-3.5 text-white/80" />
-      <span className="text-white/90">{message ?? label}</span>
+      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary/85" />
+      <Icon className="h-3.5 w-3.5 text-foreground/70" />
+      <span className="text-foreground/90">{message ?? label}</span>
     </div>
   );
 }

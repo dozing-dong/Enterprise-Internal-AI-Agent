@@ -88,14 +88,11 @@ export function Sidebar() {
       <div className="flex items-center justify-between p-4 pb-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-400 to-violet-500 shadow-lg">
-            <MessageSquare className="h-4 w-4 text-white" />
+            <MessageSquare className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold tracking-tight">
-              Knowledge Chat
-            </span>
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-              RAG Assistant
+              Company Copilot
             </span>
           </div>
         </div>
@@ -145,7 +142,7 @@ export function Sidebar() {
                   <div
                     data-active={isActive}
                     className={cn(
-                      "group glass-row flex items-center gap-2 rounded-2xl border border-transparent px-3 py-2",
+                      "group glass-row grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-2xl border border-transparent px-3 py-2",
                       "cursor-pointer",
                     )}
                     onClick={() => {
@@ -163,7 +160,7 @@ export function Sidebar() {
                       }
                     }}
                   >
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       {isRenaming ? (
                         <div
                           className="flex items-center gap-1"
@@ -214,7 +211,7 @@ export function Sidebar() {
                       ) : (
                         <>
                           <div
-                            className="truncate text-sm font-medium text-foreground"
+                            className="w-full truncate pr-1 text-sm font-medium text-foreground"
                             title={session.title}
                           >
                             {session.title}
@@ -279,7 +276,7 @@ export function Sidebar() {
         )}
       </ScrollArea>
 
-      <div className="border-t border-white/5 p-3 text-[10px] text-muted-foreground">
+      <div className="border-t border-border/70 p-3 text-[10px] text-muted-foreground">
         Sessions are identified by <code className="text-foreground/80">session_id</code>;
         each new chat gets a fresh ID.
       </div>

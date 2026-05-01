@@ -18,7 +18,7 @@ function AmbientBackground() {
           top: "-12rem",
           left: "-10rem",
           background:
-            "radial-gradient(circle, rgba(96,165,250,0.55) 0%, rgba(96,165,250,0) 70%)",
+            "radial-gradient(circle, rgba(96,165,250,0.30) 0%, rgba(96,165,250,0) 72%)",
           animationDelay: "0s",
         }}
       />
@@ -28,7 +28,7 @@ function AmbientBackground() {
           bottom: "-10rem",
           right: "-8rem",
           background:
-            "radial-gradient(circle, rgba(167,139,250,0.55) 0%, rgba(167,139,250,0) 70%)",
+            "radial-gradient(circle, rgba(167,139,250,0.28) 0%, rgba(167,139,250,0) 72%)",
           animationDelay: "-8s",
         }}
       />
@@ -38,7 +38,7 @@ function AmbientBackground() {
           top: "30%",
           left: "55%",
           background:
-            "radial-gradient(circle, rgba(244,114,182,0.42) 0%, rgba(244,114,182,0) 70%)",
+            "radial-gradient(circle, rgba(244,114,182,0.20) 0%, rgba(244,114,182,0) 72%)",
           animationDelay: "-16s",
         }}
       />
@@ -46,7 +46,7 @@ function AmbientBackground() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(1200px 800px at 50% -10%, rgba(255,255,255,0.06), transparent 60%)",
+            "radial-gradient(1200px 800px at 50% -10%, rgba(255,255,255,0.55), transparent 62%)",
         }}
       />
     </div>

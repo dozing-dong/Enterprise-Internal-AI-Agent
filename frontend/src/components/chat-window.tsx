@@ -1,65 +1,22 @@
 import * as React from "react";
 import { Sparkles } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/composer";
 import { MessageBubble } from "@/components/message-bubble";
 import { StageIndicator } from "@/components/stage-indicator";
 import { useChatStore } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 
-const SUGGESTIONS = [
-  "What does the knowledge base cover?",
-  "Summarize the most recent document.",
-  "Compare the top-rated answers on retrieval quality.",
-];
-
 function EmptyState() {
-  const startNewChat = useChatStore((s) => s.startNewChat);
-  const sendMessage = useChatStore((s) => s.sendMessage);
-  const isStreaming = useChatStore((s) => s.isStreaming);
-  const currentSessionId = useChatStore((s) => s.currentSessionId);
-
-  const handleSuggestion = async (text: string) => {
-    if (isStreaming) return;
-    if (!currentSessionId) {
-      try {
-        await startNewChat();
-      } catch (err) {
-        console.error("Failed to create chat", err);
-        return;
-      }
-    }
-    void sendMessage(text);
-  };
-
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-6 text-center animate-fade-in">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-400/30 to-violet-500/30 shadow-2xl ring-1 ring-white/15 backdrop-blur-xl">
-        <Sparkles className="h-7 w-7 text-white" />
+      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-400/25 to-violet-500/20 shadow-xl ring-1 ring-primary/15 backdrop-blur-xl">
+        <Sparkles className="h-7 w-7 text-primary/90" />
       </div>
-      <div className="space-y-2">
+      <div>
         <h1 className="text-3xl font-semibold tracking-tight">
           How can I help today?
         </h1>
-        <p className="max-w-md text-sm text-muted-foreground">
-          Ask anything about your enterprise knowledge base. Answers are
-          grounded in retrieved sources you can inspect.
-        </p>
-      </div>
-      <div className="flex w-full max-w-xl flex-wrap justify-center gap-2">
-        {SUGGESTIONS.map((suggestion) => (
-          <Button
-            key={suggestion}
-            variant="secondary"
-            size="sm"
-            className="rounded-full text-xs"
-            onClick={() => void handleSuggestion(suggestion)}
-            disabled={isStreaming}
-          >
-            {suggestion}
-          </Button>
-        ))}
       </div>
     </div>
   );
@@ -111,18 +68,6 @@ export function ChatWindow() {
           <h2 className="truncate text-sm font-semibold tracking-tight">
             {currentTitle}
           </h2>
-          {currentSessionId ? (
-            <p className="truncate text-[10px] text-muted-foreground">
-              session_id:{" "}
-              <code className="font-mono text-foreground/80">
-                {currentSessionId}
-              </code>
-            </p>
-          ) : (
-            <p className="text-[10px] text-muted-foreground">
-              No active session.
-            </p>
-          )}
         </div>
         <StageIndicator stage={stage} message={stageMessage} />
       </header>

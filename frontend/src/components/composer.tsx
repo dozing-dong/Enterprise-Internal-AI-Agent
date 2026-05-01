@@ -59,7 +59,7 @@ export function Composer() {
         placeholder={
           isStreaming
             ? "Waiting for the assistant to finish..."
-            : "Ask anything about the knowledge base..."
+            : "Ask anything..."
         }
         rows={1}
         className="max-h-[200px] flex-1 px-0 py-2.5"
