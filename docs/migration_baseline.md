@@ -27,3 +27,24 @@ This checklist captures the expected behavior before and after the pure LangGrap
   - `vector_document_count`
   - `raw_document_count`
   - `execution_mode`
+
+## Refactor Comment Baseline
+
+- No unfinished refactor markers in `backend/**/*.py`:
+  - `TODO`, `FIXME`, `HACK`, `XXX`, `WIP`, `REFACTOR`
+  - `待重构`, `待迁移`, `后续优化`
+- Existing `临时` wording in retriever docstring is an intentional evaluation design note, not migration debt.
+
+## DI Acceptance
+
+- Routes consume runtime only via `Depends(get_runtime)` (no module-level
+  reach-around).
+- `create_demo_runtime` accepts optional injection of every component while
+  defaulting to the original wiring.
+- `set_runtime_factory` / `reset_runtime` exist for swapping or resetting the
+  composition root (used by tests).
+- Performance caches in `backend/data/knowledge_base.py` and
+  `backend/rag/models.py` provide explicit clear helpers
+  (`clear_document_caches`, `reset_bedrock_client`).
+- `tests/api/test_dependency_injection.py` covers `/`, `/health`, `/chat`
+  with a fake runtime (no pgvector / Bedrock calls).

@@ -6,7 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 HISTORY_DIR = PROJECT_ROOT / "chat_history"
 
-EXECUTION_MODE = "langgraph"
+EXECUTION_MODE = os.getenv("EXECUTION_MODE", "langgraph")
 MODEL_PROVIDER = "bedrock"
 VECTOR_BACKEND = "pgvector"
 

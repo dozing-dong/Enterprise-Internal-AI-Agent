@@ -14,7 +14,11 @@ from backend.config import (
 
 @lru_cache(maxsize=1)
 def _get_bedrock_client():
-    """创建 Bedrock Runtime 客户端。"""
+    """创建 Bedrock Runtime 客户端。
+
+    使用 lru_cache 复用底层 boto3 client（连接池、签名器开销较高）。
+    该缓存仅为性能优化，可在测试或凭证刷新场景下显式清空。
+    """
     try:
         import boto3
     except ImportError as exc:
@@ -24,6 +28,11 @@ def _get_bedrock_client():
         "bedrock-runtime",
         region_name=AWS_REGION,
     )
+
+
+def reset_bedrock_client() -> None:
+    """显式释放 Bedrock 客户端缓存，下次调用时重新创建。"""
+    _get_bedrock_client.cache_clear()
 
 
 def _extract_text_from_converse_response(response: dict[str, Any]) -> str:

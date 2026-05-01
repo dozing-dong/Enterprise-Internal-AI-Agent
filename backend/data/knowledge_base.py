@@ -26,7 +26,7 @@ def read_json_file(file_path: Path) -> list[dict]:
     with file_path.open("r", encoding="utf-8") as file:
         return json.load(file)
 
-
+#根据本地原始文档构建适合RAG的文档列表
 @lru_cache(maxsize=1)
 def build_documents() -> list[RagDocument]:
     rows = read_json_file(LOCAL_EVAL_DOCUMENTS_PATH)
@@ -48,7 +48,7 @@ def build_documents() -> list[RagDocument]:
 
     return documents
 
-
+#根据本地原始评测样本构建适合RAG的评测样本列表
 @lru_cache(maxsize=1)
 def build_eval_cases() -> list[dict]:
     rows = read_json_file(LOCAL_EVAL_CASES_PATH)
@@ -68,3 +68,14 @@ def build_eval_cases() -> list[dict]:
         )
 
     return eval_cases
+
+
+def clear_document_caches() -> None:
+    """显式清空文档加载相关的 lru_cache。
+
+    设计约束：
+    - 这些缓存仅是性能优化，不承担业务状态。
+    - 测试或热重载时调用以避免跨用例污染。
+    """
+    build_documents.cache_clear()
+    build_eval_cases.cache_clear()

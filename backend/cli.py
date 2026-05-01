@@ -1,3 +1,10 @@
+"""命令行调试入口。
+
+说明：
+- FastAPI 服务入口：`python run_api.py`
+- 本模块仅用于本地交互式调试，不作为标准服务入口。
+"""
+
 from backend.config import BM25_WEIGHT, QUERY_REWRITE_ENABLED, VECTOR_WEIGHT
 from backend.runtime import DemoRuntime, create_demo_runtime
 from backend.storage.history import build_history_path, clear_session_history
