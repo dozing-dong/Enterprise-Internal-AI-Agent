@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -9,9 +10,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.data.knowledge_base import build_documents
 from backend.data.processing import split_documents
+from backend.types import RagDocument
 from evals.rag_eval import (
     EVAL_CASES,
-    build_eval_retrievers,
+    build_eval_retrieve_nodes,
     extract_context_ids,
     print_eval_dataset_overview,
 )
@@ -31,8 +33,8 @@ def deduplicate_preserve_order(values: list[str]) -> list[str]:
 
 
 async def evaluate_single_case_with_ragas(
-    retriever_name: str,
-    retriever,
+    retrieve_node_name: str,
+    retrieve_docs_node: Callable[[str], list[RagDocument]],
     case: dict,
     precision_metric: IDBasedContextPrecision,
     recall_metric: IDBasedContextRecall,
@@ -40,7 +42,7 @@ async def evaluate_single_case_with_ragas(
     """使用 RAGAS 评测单个问题的检索结果。"""
     question = case["question"]
     reference_context_ids = case["reference_context_ids"]
-    retrieved_docs = retriever.invoke(question)
+    retrieved_docs = retrieve_docs_node(question)
 
     retrieved_context_ids = deduplicate_preserve_order(
         extract_context_ids(retrieved_docs)
@@ -58,7 +60,7 @@ async def evaluate_single_case_with_ragas(
     return {
         "case_id": case["case_id"],
         "category": case["category"],
-        "retriever_name": retriever_name,
+        "retrieve_node_name": retrieve_node_name,
         "question": question,
         "reference_context_ids": reference_context_ids,
         "retrieved_context_ids": retrieved_context_ids,
@@ -67,12 +69,12 @@ async def evaluate_single_case_with_ragas(
     }
 
 
-async def evaluate_retriever_with_ragas(
-    retriever_name: str,
-    retriever,
+async def evaluate_retrieve_node_with_ragas(
+    retrieve_node_name: str,
+    retrieve_docs_node: Callable[[str], list[RagDocument]],
     eval_cases: list[dict],
 ) -> list[dict]:
-    """使用 RAGAS 评测某一种检索器。"""
+    """使用 RAGAS 评测某一个 retrieve_docs 节点函数。"""
     case_results: list[dict] = []
     precision_metric = IDBasedContextPrecision()
     recall_metric = IDBasedContextRecall()
@@ -80,8 +82,8 @@ async def evaluate_retriever_with_ragas(
     for case in eval_cases:
         case_results.append(
             await evaluate_single_case_with_ragas(
-                retriever_name,
-                retriever,
+                retrieve_node_name,
+                retrieve_docs_node,
                 case,
                 precision_metric,
                 recall_metric,
@@ -132,7 +134,7 @@ def print_case_results(case_results: list[dict]) -> None:
     for case_result in case_results:
         print("-" * 80)
         print(f"案例编号: {case_result['case_id']}")
-        print(f"检索器: {case_result['retriever_name']}")
+        print(f"检索节点: {case_result['retrieve_node_name']}")
         print(f"类别: {case_result['category']}")
         print(f"问题: {case_result['question']}")
         print(f"标准 context_id: {case_result['reference_context_ids']}")
@@ -142,16 +144,16 @@ def print_case_results(case_results: list[dict]) -> None:
 
 
 def print_summary(all_results: dict[str, list[dict]]) -> None:
-    """打印所有检索器的 RAGAS 汇总结果。"""
+    """打印所有检索节点的 RAGAS 汇总结果。"""
     print("\n" + "=" * 80)
     print("RAGAS 检索评测汇总")
     print("=" * 80)
 
-    for retriever_name, case_results in all_results.items():
+    for retrieve_node_name, case_results in all_results.items():
         summary = summarize_ragas_results(case_results)
         category_summary = summarize_ragas_results_by_category(case_results)
 
-        print(f"检索器: {retriever_name}")
+        print(f"检索节点: {retrieve_node_name}")
         print(f"  题目总数: {summary['total_cases']}")
         print(f"  RAGAS Context Precision: {summary['ragas_context_precision']:.4f}")
         print(f"  RAGAS Context Recall: {summary['ragas_context_recall']:.4f}")
@@ -174,21 +176,21 @@ async def main() -> None:
 
     documents = build_documents()
     split_documents_list = split_documents(documents)
-    retrievers = build_eval_retrievers(split_documents_list)
+    retrieve_nodes = build_eval_retrieve_nodes(split_documents_list)
 
     all_results: dict[str, list[dict]] = {}
 
-    for retriever_name, retriever in retrievers.items():
+    for retrieve_node_name, retrieve_docs_node in retrieve_nodes.items():
         print("\n" + "=" * 80)
-        print(f"开始 RAGAS 评测: {retriever_name}")
+        print(f"开始 RAGAS 评测: {retrieve_node_name}")
         print("=" * 80)
 
-        case_results = await evaluate_retriever_with_ragas(
-            retriever_name,
-            retriever,
+        case_results = await evaluate_retrieve_node_with_ragas(
+            retrieve_node_name,
+            retrieve_docs_node,
             EVAL_CASES,
         )
-        all_results[retriever_name] = case_results
+        all_results[retrieve_node_name] = case_results
         print_case_results(case_results)
 
     print_summary(all_results)

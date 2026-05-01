@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -19,21 +20,25 @@ from backend.rag.retrievers import (
     build_hybrid_retriever,
     build_vector_retriever,
 )
+from backend.types import RagDocument
 from evals.rag_eval import EVAL_CASES, print_eval_dataset_overview
 from evals.ragas_retrieval_eval import (
-    evaluate_retriever_with_ragas,
+    evaluate_retrieve_node_with_ragas,
     summarize_ragas_results,
     summarize_ragas_results_by_category,
 )
 
 
 # 任务 4 的重点仍然是“只比较 chunk 策略”。
-# 所以这里固定使用同一种检索器，只让 chunk 配置变化。
-TARGET_RETRIEVER_NAME = "hybrid"
+# 所以这里固定使用同一种检索节点，只让 chunk 配置变化。
+TARGET_RETRIEVE_NODE_NAME = "fuse_retrieve"
 
 
-def build_target_retriever_for_profile(split_documents_list, profile_name: str):
-    """根据 chunk 策略构建本次评测要使用的检索器。"""
+def build_retrieve_docs_node_for_profile(
+    split_documents_list,
+    profile_name: str,
+) -> Callable[[str], list[RagDocument]]:
+    """根据 chunk 策略构建本次评测要使用的 retrieve_docs 节点函数。"""
     # 每个 profile 都使用独立的 collection_name。
     # 这样可以避免多个实验之间互相污染临时向量库。
     collection_name = f"chunk_eval_{profile_name}_{uuid4().hex}"
@@ -43,18 +48,21 @@ def build_target_retriever_for_profile(split_documents_list, profile_name: str):
         collection_name=collection_name,
     )
 
-    if TARGET_RETRIEVER_NAME == "vector":
-        return build_vector_retriever(vectorstore)
+    if TARGET_RETRIEVE_NODE_NAME == "vector_retrieve":
+        vector_retriever = build_vector_retriever(vectorstore)
+        return vector_retriever.invoke
 
-    if TARGET_RETRIEVER_NAME == "bm25":
-        return build_bm25_retriever(split_documents_list)
+    if TARGET_RETRIEVE_NODE_NAME == "keyword_retrieve":
+        keyword_retriever = build_bm25_retriever(split_documents_list)
+        return keyword_retriever.invoke
 
-    if TARGET_RETRIEVER_NAME == "hybrid":
-        return build_hybrid_retriever(split_documents_list, vectorstore)
+    if TARGET_RETRIEVE_NODE_NAME == "fuse_retrieve":
+        hybrid_retriever = build_hybrid_retriever(split_documents_list, vectorstore)
+        return hybrid_retriever.invoke
 
     raise ValueError(
-        f"未知的检索器名称: {TARGET_RETRIEVER_NAME}。"
-        "可选值有: vector、bm25、hybrid"
+        f"未知的检索节点名称: {TARGET_RETRIEVE_NODE_NAME}。"
+        "可选值有: vector_retrieve、keyword_retrieve、fuse_retrieve"
     )
 
 
@@ -63,7 +71,7 @@ def print_chunk_profile_overview() -> None:
     print("=" * 80)
     print("Chunk 策略对比说明")
     print("=" * 80)
-    print(f"当前固定检索器: {TARGET_RETRIEVER_NAME}")
+    print(f"当前固定检索节点: {TARGET_RETRIEVE_NODE_NAME}")
     print(f"默认在线策略: {DEFAULT_CHUNK_PROFILE_NAME}")
     print("本次对比的 chunk 配置:")
 
@@ -140,13 +148,13 @@ async def main() -> None:
 
     for profile_name in CHUNK_PROFILES:
         split_documents_list = split_documents(documents, profile_name=profile_name)
-        retriever = build_target_retriever_for_profile(
+        retrieve_docs_node = build_retrieve_docs_node_for_profile(
             split_documents_list,
             profile_name,
         )
-        case_results = await evaluate_retriever_with_ragas(
-            TARGET_RETRIEVER_NAME,
-            retriever,
+        case_results = await evaluate_retrieve_node_with_ragas(
+            TARGET_RETRIEVE_NODE_NAME,
+            retrieve_docs_node,
             EVAL_CASES,
         )
         summary = summarize_ragas_results(case_results)

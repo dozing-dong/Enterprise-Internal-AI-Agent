@@ -2,9 +2,8 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from langchain_core.documents import Document
-
 from backend.config import PROJECT_ROOT
+from backend.types import RagDocument
 
 
 LOCAL_EVAL_DIR = PROJECT_ROOT / "backend" / "data" / "data" / "local_eval"
@@ -29,13 +28,13 @@ def read_json_file(file_path: Path) -> list[dict]:
 
 
 @lru_cache(maxsize=1)
-def build_documents() -> list[Document]:
+def build_documents() -> list[RagDocument]:
     rows = read_json_file(LOCAL_EVAL_DOCUMENTS_PATH)
-    documents: list[Document] = []
+    documents: list[RagDocument] = []
 
     for index, row in enumerate(rows, start=1):
         documents.append(
-            Document(
+            RagDocument(
                 page_content=normalize_text(row["content"]),
                 metadata={
                     "source": "local_eval",

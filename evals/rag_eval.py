@@ -1,20 +1,13 @@
 import sys
+from collections.abc import Callable
 from pathlib import Path
-
-from langchain_core.documents import Document
-from langchain_core.retrievers import BaseRetriever
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.config import (
-    EMBEDDING_MODEL_NAME,
-    EXECUTION_MODE,
-    MODEL_PROVIDER,
-    VECTOR_BACKEND,
-)
+from backend.config import BEDROCK_EMBEDDING_MODEL_ID, EXECUTION_MODE, MODEL_PROVIDER, VECTOR_BACKEND
 from backend.data.knowledge_base import build_documents, build_eval_cases
 from backend.data.processing import split_documents
 from backend.rag.retrievers import (
@@ -24,6 +17,7 @@ from backend.rag.retrievers import (
     build_vector_retriever,
     load_vectorstore,
 )
+from backend.types import RagDocument
 
 
 EVAL_CASES = build_eval_cases()
@@ -40,18 +34,22 @@ def ensure_vectorstore_ready():
     return vectorstore
 
 
-def build_eval_retrievers(
-    split_documents_list: list[Document],
-) -> dict[str, BaseRetriever]:
+def build_eval_retrieve_nodes(
+    split_documents_list,
+) -> dict[str, Callable[[str], list[RagDocument]]]:
     vectorstore = ensure_vectorstore_ready()
+    vector_retriever = build_vector_retriever(vectorstore)
+    keyword_retriever = build_bm25_retriever(split_documents_list)
+    hybrid_retriever = build_hybrid_retriever(split_documents_list, vectorstore)
+
     return {
-        "vector": build_vector_retriever(vectorstore),
-        "bm25": build_bm25_retriever(split_documents_list),
-        "hybrid": build_hybrid_retriever(split_documents_list, vectorstore),
+        "vector_retrieve": vector_retriever.invoke,
+        "keyword_retrieve": keyword_retriever.invoke,
+        "fuse_retrieve": hybrid_retriever.invoke,
     }
 
 
-def extract_context_ids(retrieved_docs: list[Document]) -> list[str]:
+def extract_context_ids(retrieved_docs) -> list[str]:
     context_ids: list[str] = []
 
     for doc in retrieved_docs:
@@ -120,13 +118,13 @@ def compute_reciprocal_rank(
 
 
 def evaluate_single_case(
-    retriever_name: str,
-    retriever: BaseRetriever,
+    retrieve_node_name: str,
+    retrieve_docs_node: Callable[[str], list[RagDocument]],
     case: dict,
 ) -> dict:
     question = case["question"]
     reference_context_ids = case["reference_context_ids"]
-    retrieved_docs = retriever.invoke(question)
+    retrieved_docs = retrieve_docs_node(question)
     context_ids = extract_context_ids(retrieved_docs)
 
     top_contents = [doc.page_content[:120].replace("\n", " ") for doc in retrieved_docs[:3]]
@@ -136,7 +134,7 @@ def evaluate_single_case(
         "category": case["category"],
         "difficulty": case["difficulty"],
         "note": case["note"],
-        "retriever_name": retriever_name,
+        "retrieve_node_name": retrieve_node_name,
         "question": question,
         "reference_context_ids": reference_context_ids,
         "retrieved_context_ids": context_ids,
@@ -149,12 +147,15 @@ def evaluate_single_case(
     }
 
 
-def evaluate_retriever(
-    retriever_name: str,
-    retriever: BaseRetriever,
+def evaluate_retrieve_node(
+    retrieve_node_name: str,
+    retrieve_docs_node: Callable[[str], list[RagDocument]],
     eval_cases: list[dict],
 ) -> list[dict]:
-    return [evaluate_single_case(retriever_name, retriever, case) for case in eval_cases]
+    return [
+        evaluate_single_case(retrieve_node_name, retrieve_docs_node, case)
+        for case in eval_cases
+    ]
 
 
 def summarize_results(case_results: list[dict]) -> dict:
@@ -200,7 +201,7 @@ def print_eval_dataset_overview() -> None:
     print("当前使用数据集：project_local_eval")
     print("知识库来源：项目内置自构造知识库文档")
     print("问题来源：项目内置自构造问答评测集")
-    print(f"默认 embedding model：{EMBEDDING_MODEL_NAME}")
+    print(f"默认 embedding model：{BEDROCK_EMBEDDING_MODEL_ID}")
     print(f"执行模式：{EXECUTION_MODE}")
     print(f"模型 provider：{MODEL_PROVIDER}")
     print(f"向量后端：{VECTOR_BACKEND}")
@@ -212,7 +213,7 @@ def print_case_results(case_results: list[dict]) -> None:
     for case_result in case_results:
         print("-" * 80)
         print(f"案例编号: {case_result['case_id']}")
-        print(f"检索器: {case_result['retriever_name']}")
+        print(f"检索节点: {case_result['retrieve_node_name']}")
         print(f"类别: {case_result['category']}")
         print(f"问题: {case_result['question']}")
         print(f"标准 context_id: {case_result['reference_context_ids']}")
@@ -229,11 +230,11 @@ def print_summary(all_results: dict[str, list[dict]]) -> None:
     print("检索评测汇总")
     print("=" * 80)
 
-    for retriever_name, case_results in all_results.items():
+    for retrieve_node_name, case_results in all_results.items():
         summary = summarize_results(case_results)
         category_summary = summarize_results_by_category(case_results)
 
-        print(f"检索器: {retriever_name}")
+        print(f"检索节点: {retrieve_node_name}")
         print(f"  题目总数: {summary['total_cases']}")
         print(f"  Recall@1: {summary['recall_at_1']:.4f}")
         print(f"  Recall@3: {summary['recall_at_3']:.4f}")
@@ -261,13 +262,17 @@ def main() -> None:
 
     documents = build_documents()
     split_documents_list = split_documents(documents)
-    retrievers = build_eval_retrievers(split_documents_list)
+    retrieve_nodes = build_eval_retrieve_nodes(split_documents_list)
 
     all_results: dict[str, list[dict]] = {}
 
-    for retriever_name, retriever in retrievers.items():
-        case_results = evaluate_retriever(retriever_name, retriever, EVAL_CASES)
-        all_results[retriever_name] = case_results
+    for retrieve_node_name, retrieve_docs_node in retrieve_nodes.items():
+        case_results = evaluate_retrieve_node(
+            retrieve_node_name,
+            retrieve_docs_node,
+            EVAL_CASES,
+        )
+        all_results[retrieve_node_name] = case_results
         print_case_results(case_results)
 
     print_summary(all_results)

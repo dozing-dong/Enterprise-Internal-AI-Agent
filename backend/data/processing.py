@@ -1,9 +1,7 @@
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from backend.types import RagDocument
 
 from backend.config import (
     CHUNK_PROFILES,
-    CHUNK_SEPARATORS,
     DEFAULT_CHUNK_PROFILE_NAME,
 )
 
@@ -22,31 +20,58 @@ def get_chunk_profile(profile_name: str | None = None) -> dict:
     return CHUNK_PROFILES[selected_profile_name]
 
 
-def build_text_splitter(profile_name: str | None = None) -> RecursiveCharacterTextSplitter:
-    """根据 chunk 策略配置创建文本切分器。"""
-    profile = get_chunk_profile(profile_name)
+def split_text_by_window(
+    text: str,
+    *,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[str]:
+    """按窗口切分文本。"""
+    if not text:
+        return []
 
-    # 这里仍然使用最容易理解的字符级切分器。
-    # 当前任务的重点不是换一种更复杂的切分器，
-    # 而是先观察 chunk_size 和 chunk_overlap 变化本身会带来什么影响。
-    return RecursiveCharacterTextSplitter(
-        chunk_size=profile["chunk_size"],
-        chunk_overlap=profile["chunk_overlap"],
-        length_function=len,
-        separators=CHUNK_SEPARATORS,
-    )
+    if chunk_size <= 0:
+        raise ValueError("chunk_size 必须大于 0。")
+
+    if chunk_overlap < 0 or chunk_overlap >= chunk_size:
+        raise ValueError("chunk_overlap 必须 >= 0 且小于 chunk_size。")
+
+    chunks: list[str] = []
+    start = 0
+    step = chunk_size - chunk_overlap
+
+    while start < len(text):
+        chunk = text[start:start + chunk_size].strip()
+        if chunk:
+            chunks.append(chunk)
+        start += step
+
+    return chunks
 
 
 def split_documents(
-    documents: list[Document],
+    documents: list[RagDocument],
     profile_name: str | None = None,
-) -> list[Document]:
+) -> list[RagDocument]:
     """把长文本切成适合检索的小片段。"""
-    text_splitter = build_text_splitter(profile_name)
-    return text_splitter.split_documents(documents)
+    profile = get_chunk_profile(profile_name)
+    split_docs: list[RagDocument] = []
+
+    for document in documents:
+        chunks = split_text_by_window(
+            document.page_content,
+            chunk_size=profile["chunk_size"],
+            chunk_overlap=profile["chunk_overlap"],
+        )
+        for chunk_index, chunk in enumerate(chunks, start=1):
+            metadata = dict(document.metadata)
+            metadata["chunk_index"] = chunk_index
+            split_docs.append(RagDocument(page_content=chunk, metadata=metadata))
+
+    return split_docs
 
 
-def format_docs(docs: list[Document]) -> str:
+def format_docs(docs: list[RagDocument]) -> str:
     """把检索结果拼成 prompt 可直接使用的上下文字符串。"""
     if not docs:
         return "未检索到可用知识片段。"
@@ -60,7 +85,7 @@ def format_docs(docs: list[Document]) -> str:
     return "\n\n".join(context_parts)
 
 
-def convert_docs_to_sources(docs: list[Document]) -> list[dict]:
+def convert_docs_to_sources(docs: list[RagDocument]) -> list[dict]:
     """把 LangChain Document 转成更适合 API 返回的 sources。"""
     sources = []
 

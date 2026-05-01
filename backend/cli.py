@@ -1,13 +1,12 @@
-from langchain_core.documents import Document
-
 from backend.config import BM25_WEIGHT, QUERY_REWRITE_ENABLED, VECTOR_WEIGHT
 from backend.runtime import DemoRuntime, create_demo_runtime
 from backend.storage.history import build_history_path, clear_session_history
+from backend.types import RagDocument
 
 
 def show_document_pipeline(
-    documents: list[Document],
-    split_documents_list: list[Document],
+    documents: list[RagDocument],
+    split_documents_list: list[RagDocument],
     vector_document_count: int,
     vector_backend_name: str,
 ) -> None:
