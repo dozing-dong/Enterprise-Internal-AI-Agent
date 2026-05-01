@@ -1,4 +1,6 @@
+import operator
 from collections.abc import Callable
+from typing import Annotated
 from typing_extensions import TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -23,7 +25,7 @@ class GraphState(TypedDict, total=False):
     history: list[dict]
     messages: list[dict]
     answer: str
-    tool_trace: list[dict]
+    tool_trace: Annotated[list[dict], operator.add]
     iteration: int
     should_continue: bool
 
@@ -48,57 +50,54 @@ def build_langgraph_executor(
     def load_history(state: GraphState) -> GraphState:
         history = read_session_history(state["session_id"])
         return {"history": history}
-
+    #把原问题改写成更适合检索的问题。
     def rewrite_query(state: GraphState) -> GraphState:
         retrieval_question = rewrite_question_for_retrieval(
             state["question"],
             rewrite_chain,
         )
-        trace = state.get("tool_trace", [])
-        trace.append(
-            {
-                "tool": "rewrite_query",
-                "input": state["question"],
-                "output": retrieval_question,
-            }
-        )
         return {
             "retrieval_question": retrieval_question,
-            "tool_trace": trace,
+            "tool_trace": [
+                {
+                    "tool": "rewrite_query",
+                    "input": state["question"],
+                    "output": retrieval_question,
+                }
+            ],
         }
 
+    #用向量相似度检索器检索相关文档。
     def vector_retrieve(state: GraphState) -> GraphState:
         retrieval_question = state.get("retrieval_question", state["question"])
         docs = vector_retriever.invoke(retrieval_question)
-        trace = state.get("tool_trace", [])
-        trace.append(
-            {
-                "tool": "vector_retrieve",
-                "input": retrieval_question,
-                "output_count": len(docs),
-            }
-        )
         return {
             "vector_docs": docs,
-            "tool_trace": trace,
+            "tool_trace": [
+                {
+                    "tool": "vector_retrieve",
+                    "input": retrieval_question,
+                    "output_count": len(docs),
+                }
+            ],
         }
 
+    #用关键词检索器检索相关文档。
     def keyword_retrieve(state: GraphState) -> GraphState:
         retrieval_question = state.get("retrieval_question", state["question"])
         docs = keyword_retriever.invoke(retrieval_question)
-        trace = state.get("tool_trace", [])
-        trace.append(
-            {
-                "tool": "keyword_retrieve",
-                "input": retrieval_question,
-                "output_count": len(docs),
-            }
-        )
         return {
             "keyword_docs": docs,
-            "tool_trace": trace,
+            "tool_trace": [
+                {
+                    "tool": "keyword_retrieve",
+                    "input": retrieval_question,
+                    "output_count": len(docs),
+                }
+            ],
         }
 
+    #用倒数排名合并前面两个检索器的检索结果。
     def fuse_docs(state: GraphState) -> GraphState:
         vector_docs = state.get("vector_docs", [])
         keyword_docs = state.get("keyword_docs", [])
@@ -111,16 +110,25 @@ def build_langgraph_executor(
             "retrieved_docs": docs,
             "context": format_docs(docs),
             "sources": convert_docs_to_sources(docs),
-            "tool_trace": trace,
+            "tool_trace": [
+                {
+                    "tool": "fuse_docs",
+                    "input_vector_count": len(vector_docs),
+                    "input_keyword_count": len(keyword_docs),
+                    "output_count": len(docs),
+                }
+            ],
             "iteration": state.get("iteration", 0) + 1,
         }
 
+    #判断检索质量是否达标，决定是继续循环还是进入生成阶段。
     def quality_gate(state: GraphState) -> GraphState:
         sources = state.get("sources", [])
         iteration = state.get("iteration", 0)
         should_continue = len(sources) < min_sources and iteration < max_iterations
         return {"should_continue": should_continue}
 
+    #把历史对话、检索上下文和当前问题拼装成发给 LLM 的消息列表。这里还没有发给模型，只是拼装。
     def build_messages(state: GraphState) -> GraphState:
         context = state.get("context", "未检索到可用知识片段。")
         history = state.get("history", [])
@@ -137,6 +145,7 @@ def build_langgraph_executor(
         )
         return {"messages": messages}
 
+    #调用模型生成回答。
     def generate_answer(state: GraphState) -> GraphState:
         answer = chat_completion(
             state.get("messages", []),
@@ -149,6 +158,7 @@ def build_langgraph_executor(
         )
         return {"answer": answer}
 
+    #把本轮的用户问题和模型回答追加写入历史文件。
     def save_history(state: GraphState) -> GraphState:
         updated_history = append_session_messages(
             state["session_id"],
@@ -159,6 +169,7 @@ def build_langgraph_executor(
         )
         return {"history": updated_history}
 
+    #整理并输出图执行的最终结果。
     def finalize(state: GraphState) -> GraphState:
         return {
             "answer": state.get("answer", "没有生成可用回答。"),
@@ -168,6 +179,7 @@ def build_langgraph_executor(
             "tool_trace": state.get("tool_trace", []),
         }
 
+    #添加节点。
     graph.add_node("route_intent", route_intent)
     graph.add_node("load_history", load_history)
     graph.add_node("rewrite_query", rewrite_query)
@@ -179,7 +191,7 @@ def build_langgraph_executor(
     graph.add_node("generate_answer", generate_answer)
     graph.add_node("save_history", save_history)
     graph.add_node("finalize", finalize)
-
+    #添加边。
     graph.set_entry_point("route_intent")
     graph.add_edge("route_intent", "load_history")
     graph.add_edge("load_history", "rewrite_query")
@@ -200,5 +212,5 @@ def build_langgraph_executor(
     graph.add_edge("generate_answer", "save_history")
     graph.add_edge("save_history", "finalize")
     graph.add_edge("finalize", END)
-
+    #编译图。
     return graph.compile()

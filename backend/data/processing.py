@@ -1,3 +1,5 @@
+import re
+
 from backend.types import RagDocument
 
 from backend.config import (
@@ -5,7 +7,7 @@ from backend.config import (
     DEFAULT_CHUNK_PROFILE_NAME,
 )
 
-
+#获取切分策略
 def get_chunk_profile(profile_name: str | None = None) -> dict:
     """读取指定的 chunk 策略配置。"""
     # 如果调用方没有显式传入策略名，就使用项目默认策略。
@@ -19,7 +21,7 @@ def get_chunk_profile(profile_name: str | None = None) -> dict:
 
     return CHUNK_PROFILES[selected_profile_name]
 
-
+#执行按窗口切分文本
 def split_text_by_window(
     text: str,
     *,
@@ -49,6 +51,70 @@ def split_text_by_window(
     return chunks
 
 
+STRUCTURE_HEADING_PATTERNS = [
+    # 例如：第八章、第12条
+    re.compile(r"^第[一二三四五六七八九十百千万0-9]+[章节条款则目]"),
+    # 例如：（一）、(2)、1.2
+    re.compile(r"^[（(]?[一二三四五六七八九十0-9]+[）).、]\s*"),
+    # 例如：1. xxx / 1.2 xxx
+    re.compile(r"^\d+(?:\.\d+)*[\s、.]"),
+]
+
+
+def _is_structure_heading(line: str) -> bool:
+    return any(pattern.match(line) for pattern in STRUCTURE_HEADING_PATTERNS)
+
+
+def split_text_by_structure_then_window(
+    text: str,
+    *,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[str]:
+    """版本B切分：先结构分块，再对超长块窗口切分。"""
+    if not text:
+        return []
+
+    lines = text.splitlines()
+    structure_blocks: list[str] = []
+    current_lines: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            if current_lines:
+                structure_blocks.append("\n".join(current_lines).strip())
+                current_lines = []
+            continue
+
+        if _is_structure_heading(line) and current_lines:
+            structure_blocks.append("\n".join(current_lines).strip())
+            current_lines = [line]
+            continue
+
+        current_lines.append(line)
+
+    if current_lines:
+        structure_blocks.append("\n".join(current_lines).strip())
+
+    if not structure_blocks:
+        structure_blocks = [text.strip()]
+
+    chunks: list[str] = []
+    for block in structure_blocks:
+        if len(block) <= chunk_size:
+            chunks.append(block)
+            continue
+        chunks.extend(
+            split_text_by_window(
+                block,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
+        )
+    return chunks
+
+
 def split_documents(
     documents: list[RagDocument],
     profile_name: str | None = None,
@@ -58,7 +124,7 @@ def split_documents(
     split_docs: list[RagDocument] = []
 
     for document in documents:
-        chunks = split_text_by_window(
+        chunks = split_text_by_structure_then_window(
             document.page_content,
             chunk_size=profile["chunk_size"],
             chunk_overlap=profile["chunk_overlap"],

@@ -1,8 +1,17 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DOTENV_PATH = PROJECT_ROOT / ".env"
+DOTENV_LOCAL_PATH = PROJECT_ROOT / ".env.local"
+
+# 按顺序加载本地配置文件，且不覆盖系统环境变量。
+# 这样可以兼容 CI、容器和开发者本机手动注入的凭证。
+load_dotenv(DOTENV_PATH, override=False)
+load_dotenv(DOTENV_LOCAL_PATH, override=False)
 
 HISTORY_DIR = PROJECT_ROOT / "chat_history"
 
