@@ -10,12 +10,14 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.api.dependencies import get_runtime, init_runtime
 from backend.api.exceptions import RagException
 from backend.api.routes.chat import router as chat_router
 from backend.api.routes.history import router as history_router
+from backend.api.routes.sessions import router as sessions_router
 from backend.api.schemas import ApiInfoResponse
 from backend.runtime import DemoRuntime
 
@@ -33,6 +35,19 @@ app = FastAPI(
     version="0.5.0",
     description="企业内部知识库问答系统后端，包含查询改写、混合检索和多轮对话。",
     lifespan=lifespan,
+)
+
+# 允许本地 Vite 开发服务器跨域访问。生产部署时应换成实际前端域名。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
+    expose_headers=["Content-Type"],
 )
 
 
@@ -59,6 +74,7 @@ async def runtime_error_handler(request: Request, exc: RuntimeError) -> JSONResp
 
 app.include_router(chat_router)
 app.include_router(history_router)
+app.include_router(sessions_router)
 
 
 @app.get("/", response_model=ApiInfoResponse)

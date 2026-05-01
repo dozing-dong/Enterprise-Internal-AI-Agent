@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -58,7 +58,25 @@ def chat_completion(
 ) -> str:
     """调用 Bedrock Converse API 生成文本。"""
     client = _get_bedrock_client()
+    request = _build_converse_request(
+        messages,
+        system_prompt=system_prompt,
+        temperature=temperature,
+    )
+    response = client.converse(**request)
+    answer = _extract_text_from_converse_response(response)
+    if not answer:
+        return "没有生成可用回答。"
+    return answer
 
+
+def _build_converse_request(
+    messages: Sequence[dict[str, str]],
+    *,
+    system_prompt: str | None,
+    temperature: float,
+) -> dict[str, Any]:
+    """组装 Bedrock Converse / ConverseStream 共用的请求体。"""
     conversation_messages: list[dict[str, Any]] = []
     for message in messages:
         role = message.get("role", "user")
@@ -84,11 +102,40 @@ def chat_completion(
     if system_prompt:
         request["system"] = [{"text": system_prompt}]
 
-    response = client.converse(**request)
-    answer = _extract_text_from_converse_response(response)
-    if not answer:
-        return "没有生成可用回答。"
-    return answer
+    return request
+
+
+def chat_completion_stream(
+    messages: Sequence[dict[str, str]],
+    *,
+    system_prompt: str | None = None,
+    temperature: float = 0.0,
+) -> Iterator[str]:
+    """以流式方式调用 Bedrock Converse Stream，逐 delta 产出文本。
+
+    - 仅 yield text delta；其他事件（messageStart / contentBlockStart / metadata 等）忽略。
+    - 调用方负责拼接完整答案。
+    """
+    client = _get_bedrock_client()
+    request = _build_converse_request(
+        messages,
+        system_prompt=system_prompt,
+        temperature=temperature,
+    )
+
+    response = client.converse_stream(**request)
+    stream = response.get("stream")
+    if stream is None:
+        return
+
+    for event in stream:
+        delta_event = event.get("contentBlockDelta")
+        if not delta_event:
+            continue
+        delta = delta_event.get("delta") or {}
+        text = delta.get("text")
+        if isinstance(text, str) and text:
+            yield text
 
 
 def embed_texts(texts: Sequence[str]) -> list[list[float]]:

@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* shadcn/ui CSS variables — tuned dark to make the glass blur read */
+@layer base {
+  :root {
+    --background: 222 30% 6%;
+    --foreground: 210 40% 98%;
+    --muted: 217 19% 17%;
+    --muted-foreground: 215 20% 70%;
+    --primary: 210 100% 60%;
+    --primary-foreground: 222 47% 8%;
+    --accent: 217 19% 22%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 25% 22%;
+    --input: 215 25% 22%;
+    --ring: 210 100% 60%;
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+      "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+}
+
+/* ----------------------------------------------------------------- */
+/* Apple Liquid Glass utilities                                       */
+/* ----------------------------------------------------------------- */
+@layer utilities {
+  /* Primary translucent surface used by panels and cards */
+  .glass-panel {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.10) 0%,
+      rgba(255, 255, 255, 0.04) 100%
+    );
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.18) inset,
+      0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+      0 20px 60px -20px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Lighter variant for floating bubbles / popovers */
+  .glass-soft {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.14) inset,
+      0 10px 40px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  /* User chat bubble — vivid blue glass with inner highlight */
+  .glass-bubble-user {
+    background: linear-gradient(
+      135deg,
+      rgba(59, 130, 246, 0.85) 0%,
+      rgba(99, 102, 241, 0.85) 100%
+    );
+    color: white;
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.35) inset,
+      0 12px 30px -10px rgba(59, 130, 246, 0.55);
+  }
+
+  /* Assistant bubble — same as glass-panel with slightly tighter blur */
+  .glass-bubble-assistant {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    backdrop-filter: blur(20px) saturate(170%);
+    -webkit-backdrop-filter: blur(20px) saturate(170%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.14) inset,
+      0 12px 30px -16px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Sidebar list row hover/active states */
+  .glass-row {
+    background: transparent;
+    transition: background 200ms ease, border-color 200ms ease;
+  }
+  .glass-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .glass-row[data-active="true"] {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.10) 0%,
+      rgba(255, 255, 255, 0.04) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.18) inset;
+  }
+
+  /* Animated gradient-mesh background blobs.
+     We render three absolutely positioned orbs in App.tsx;
+     this utility just wraps the shared visuals. */
+  .ambient-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(80px);
+    opacity: 0.55;
+    pointer-events: none;
+    will-change: transform;
+  }
+
+  /* Token cursor for the streaming assistant message */
+  .stream-caret::after {
+    content: "▍";
+    margin-left: 2px;
+    color: rgba(255, 255, 255, 0.65);
+    animation: caret-blink 1s steps(2, start) infinite;
+  }
+
+  @keyframes caret-blink {
+    to {
+      visibility: hidden;
+    }
+  }
+
+  /* Shimmer for loading title placeholder */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 0%,
+      rgba(255, 255, 255, 0.18) 50%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* Scrollbar — slim and translucent to match the glass aesthetic */
+  .scrollbar-glass::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-glass::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-glass::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+  }
+  .scrollbar-glass::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+}

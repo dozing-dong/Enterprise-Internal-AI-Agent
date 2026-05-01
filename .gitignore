@@ -16,3 +16,18 @@ venv/
 docs/
 backend/data/data/local_eval/*.json
 requirements*.txt
+
+# Frontend (React + Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/.turbo/
+frontend/coverage/
+frontend/.eslintcache
+frontend/*.tsbuildinfo
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/*.log
+
