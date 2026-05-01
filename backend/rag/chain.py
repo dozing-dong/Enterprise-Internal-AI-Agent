@@ -130,16 +130,16 @@ def build_langgraph_executor(
 
     #把历史对话、检索上下文和当前问题拼装成发给 LLM 的消息列表。这里还没有发给模型，只是拼装。
     def build_messages(state: GraphState) -> GraphState:
-        context = state.get("context", "未检索到可用知识片段。")
+        context = state.get("context", "No relevant knowledge snippets were retrieved.")
         history = state.get("history", [])
         messages = list(history)
         messages.append(
             {
                 "role": "user",
                 "content": (
-                    f"问题：{state['question']}\n\n"
-                    f"参考知识：\n{context}\n\n"
-                    "请基于参考知识回答。"
+                    f"Question: {state['question']}\n\n"
+                    f"Reference knowledge:\n{context}\n\n"
+                    "Please answer the question based on the reference knowledge above."
                 ),
             }
         )
@@ -150,9 +150,10 @@ def build_langgraph_executor(
         answer = chat_completion(
             state.get("messages", []),
             system_prompt=(
-                "你是一个基于检索结果回答问题的助手。"
-                "请优先依据提供的知识库片段和对话历史作答。"
-                "如果参考内容不足以支持结论，就明确说明不知道，不能编造。"
+                "You are an assistant that answers questions based on retrieval results. "
+                "Prefer to rely on the provided knowledge base snippets and the conversation history. "
+                "If the reference content is not sufficient to support a conclusion, "
+                "clearly say that you do not know and do not fabricate an answer."
             ),
             temperature=0.0,
         )

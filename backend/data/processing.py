@@ -140,13 +140,13 @@ def split_documents(
 def format_docs(docs: list[RagDocument]) -> str:
     """把检索结果拼成 prompt 可直接使用的上下文字符串。"""
     if not docs:
-        return "未检索到可用知识片段。"
+        return "No relevant knowledge snippets were retrieved."
 
     context_parts = []
 
     # 这里把每个片段都带上简单编号。
     for index, doc in enumerate(docs, start=1):
-        context_parts.append(f"[片段 {index}]\n{doc.page_content}")
+        context_parts.append(f"[Snippet {index}]\n{doc.page_content}")
 
     return "\n\n".join(context_parts)
 
