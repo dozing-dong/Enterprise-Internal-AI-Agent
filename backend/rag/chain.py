@@ -7,6 +7,7 @@ from langgraph.graph import END, StateGraph
 
 from backend.data.processing import convert_docs_to_sources, format_docs
 from backend.rag.models import chat_completion
+from backend.rag.rerank import Reranker
 from backend.rag.retrievers import SearchRetriever, fuse_retrieval_results
 from backend.rag.rewrite import rewrite_question_for_retrieval
 from backend.storage.history import append_session_messages, read_session_history
@@ -37,6 +38,8 @@ def build_langgraph_executor(
     max_iterations: int,
     min_sources: int,
     top_k: int,
+    reranker: Reranker | None = None,
+    rerank_top_k: int | None = None,
 ):
     graph = StateGraph(GraphState)
 
@@ -121,6 +124,29 @@ def build_langgraph_executor(
             "iteration": state.get("iteration", 0) + 1,
         }
 
+    #对融合后的候选文档做精排，截断到 rerank_top_k。
+    def rerank_docs(state: GraphState) -> GraphState:
+        candidates = state.get("retrieved_docs", [])
+        if reranker is None or not candidates:
+            return {}
+
+        final_k = rerank_top_k if rerank_top_k is not None else top_k
+        retrieval_question = state.get("retrieval_question", state["question"])
+        reranked = reranker.invoke(retrieval_question, candidates, final_k)
+
+        return {
+            "retrieved_docs": reranked,
+            "context": format_docs(reranked),
+            "sources": convert_docs_to_sources(reranked),
+            "tool_trace": [
+                {
+                    "tool": "rerank_docs",
+                    "input_count": len(candidates),
+                    "output_count": len(reranked),
+                }
+            ],
+        }
+
     #判断检索质量是否达标，决定是继续循环还是进入生成阶段。
     def quality_gate(state: GraphState) -> GraphState:
         sources = state.get("sources", [])
@@ -187,6 +213,7 @@ def build_langgraph_executor(
     graph.add_node("vector_retrieve", vector_retrieve)
     graph.add_node("keyword_retrieve", keyword_retrieve)
     graph.add_node("fuse_docs", fuse_docs)
+    graph.add_node("rerank_docs", rerank_docs)
     graph.add_node("quality_gate", quality_gate)
     graph.add_node("build_messages", build_messages)
     graph.add_node("generate_answer", generate_answer)
@@ -200,7 +227,8 @@ def build_langgraph_executor(
     graph.add_edge("rewrite_query", "keyword_retrieve")
     graph.add_edge("vector_retrieve", "fuse_docs")
     graph.add_edge("keyword_retrieve", "fuse_docs")
-    graph.add_edge("fuse_docs", "quality_gate")
+    graph.add_edge("fuse_docs", "rerank_docs")
+    graph.add_edge("rerank_docs", "quality_gate")
     graph.add_conditional_edges(
         "quality_gate",
         lambda state: "rewrite_query" if state.get("should_continue") else "build_messages",

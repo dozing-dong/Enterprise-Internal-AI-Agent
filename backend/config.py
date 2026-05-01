@@ -21,6 +21,24 @@ RETRIEVER_TOP_K = 3
 VECTOR_WEIGHT = 0.6
 BM25_WEIGHT = 0.4
 
+# 召回阶段（向量、BM25、融合）保留的候选数量。
+# 重排开启时通常放大到 20~50，让 reranker 有更大的候选池可选；
+# 关闭重排时与 RETRIEVER_TOP_K 等价即可。
+RETRIEVER_CANDIDATE_K = int(os.getenv("RETRIEVER_CANDIDATE_K", "20"))
+
+# 重排相关配置。
+# 默认启用：若运行环境不支持，可通过环境变量显式关闭。
+RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
+RERANK_BACKEND = os.getenv("RERANK_BACKEND", "bedrock")
+RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "3"))
+BEDROCK_RERANK_MODEL_ID = os.getenv(
+    "BEDROCK_RERANK_MODEL_ID",
+    "amazon.rerank-v1:0",
+)
+# Bedrock Rerank API 走的是 bedrock-agent-runtime；
+# 该服务在 region 上的可用性与 bedrock-runtime 不一定一致，单独配置以便切换。
+BEDROCK_RERANK_REGION = os.getenv("BEDROCK_RERANK_REGION", "")
+
 CHUNK_SEPARATORS = ["。", "，", "\n", ""]
 DEFAULT_CHUNK_PROFILE_NAME = "balanced_default"
 CHUNK_PROFILES = {

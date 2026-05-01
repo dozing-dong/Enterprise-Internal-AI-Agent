@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from backend.api.dependencies import get_runtime
 from backend.api.exceptions import RagException
 from backend.api.schemas import ChatRequest, ChatResponse, ChatStreamRequest, SourceItem
-from backend.config import RETRIEVER_TOP_K
+from backend.config import RETRIEVER_CANDIDATE_K, RERANK_TOP_K, RETRIEVER_TOP_K
 from backend.data.processing import convert_docs_to_sources, format_docs
 from backend.rag.models import chat_completion_stream
 from backend.rag.retrievers import fuse_retrieval_results
@@ -126,6 +126,7 @@ async def chat_stream(
     rewrite_chain = runtime.rewrite_chain
     vector_retriever = runtime.vector_retriever
     keyword_retriever = runtime.keyword_retriever
+    reranker = runtime.reranker
 
     def event_stream() -> Iterator[str]:
         try:
@@ -144,13 +145,31 @@ async def chat_stream(
             )
             vector_docs = vector_retriever.invoke(retrieval_question)
             keyword_docs = keyword_retriever.invoke(retrieval_question)
+            candidate_top_k = (
+                max(RETRIEVER_CANDIDATE_K, RERANK_TOP_K)
+                if reranker is not None
+                else RETRIEVER_TOP_K
+            )
             fused_docs = fuse_retrieval_results(
                 vector_docs,
                 keyword_docs,
-                top_k=RETRIEVER_TOP_K,
+                top_k=candidate_top_k,
             )
-            sources = convert_docs_to_sources(fused_docs)
-            context = format_docs(fused_docs)
+
+            final_docs = fused_docs
+            if reranker is not None and fused_docs:
+                yield _format_sse(
+                    "progress",
+                    {"stage": "reranking", "message": "Reranking retrieved snippets..."},
+                )
+                final_docs = reranker.invoke(
+                    retrieval_question,
+                    fused_docs,
+                    RERANK_TOP_K,
+                )
+
+            sources = convert_docs_to_sources(final_docs)
+            context = format_docs(final_docs)
 
             yield _format_sse(
                 "sources",

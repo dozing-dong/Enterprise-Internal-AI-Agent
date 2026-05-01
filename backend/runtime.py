@@ -5,11 +5,16 @@ from backend.config import (
     LANGGRAPH_MAX_ITERATIONS,
     LANGGRAPH_MIN_SOURCES,
     QUERY_REWRITE_ENABLED,
+    RERANK_BACKEND,
+    RERANK_ENABLED,
+    RERANK_TOP_K,
+    RETRIEVER_CANDIDATE_K,
     RETRIEVER_TOP_K,
 )
 from backend.data.knowledge_base import build_documents
 from backend.data.processing import split_documents
 from backend.rag.chain import build_langgraph_executor
+from backend.rag.rerank import Reranker, build_reranker
 from backend.rag.retrievers import (
     SearchRetriever,
     VectorStoreClient,
@@ -42,6 +47,7 @@ class DemoRuntime:
         chat_executor: Callable[[str, str], dict],
         execution_mode: str,
         vector_document_count: int,
+        reranker: Reranker | None = None,
     ) -> None:
         # 保存原始文档。
         self.documents = documents
@@ -72,6 +78,9 @@ class DemoRuntime:
 
         # 保存向量库文档数量。
         self.vector_document_count = vector_document_count
+
+        # 保存重排器（可能为 None，表示未启用重排）。
+        self.reranker = reranker
 
 
 def prepare_documents_for_rag() -> tuple[list[RagDocument], list[RagDocument]]:
@@ -114,6 +123,24 @@ def build_demo_rewrite_chain() -> Any | None:
     return build_query_rewrite_chain()
 
 
+def build_demo_reranker() -> Reranker | None:
+    """根据配置决定是否启用重排。"""
+    if not RERANK_ENABLED:
+        return None
+    return build_reranker(RERANK_BACKEND)
+
+
+def _resolve_retrieval_top_k() -> int:
+    """根据是否启用重排，返回召回阶段实际使用的候选数。
+
+    启用重排时扩大候选池，让 reranker 有足够材料挑选；
+    关闭时退回原本的 RETRIEVER_TOP_K，保持旧行为。
+    """
+    if RERANK_ENABLED:
+        return max(RETRIEVER_CANDIDATE_K, RERANK_TOP_K)
+    return RETRIEVER_TOP_K
+
+
 def create_demo_runtime(
     execution_mode: str | None = None,
     *,
@@ -124,13 +151,15 @@ def create_demo_runtime(
     keyword_retriever: SearchRetriever | None = None,
     retriever: SearchRetriever | None = None,
     rewrite_chain: Any = _UNSET,
+    reranker: Any = _UNSET,
     chat_executor: Callable[[str, str], dict] | None = None,
     vector_document_count: int | None = None,
 ) -> DemoRuntime:
     """创建在线服务和 CLI 需要的运行时对象。
 
     支持按需注入任意子依赖，缺省时回退到默认装配路径。
-    用 _UNSET 区分 rewrite_chain 的 None 语义（None 表示禁用查询改写）。
+    用 _UNSET 区分 rewrite_chain / reranker 的 None 语义
+    （None 表示显式禁用，缺省走配置默认值）。
     """
     selected_execution_mode = execution_mode or EXECUTION_MODE
 
@@ -155,12 +184,14 @@ def create_demo_runtime(
             "未找到可用的向量索引。请先运行 `python build_index.py` 构建索引。"
         )
 
+    retrieval_top_k = _resolve_retrieval_top_k()
+
     if vector_retriever is None:
-        vector_retriever = build_vector_retriever(vectorstore, top_k=RETRIEVER_TOP_K)
+        vector_retriever = build_vector_retriever(vectorstore, top_k=retrieval_top_k)
 
     if keyword_retriever is None:
         keyword_retriever = build_bm25_retriever(
-            split_documents_list, top_k=RETRIEVER_TOP_K
+            split_documents_list, top_k=retrieval_top_k
         )
 
     if retriever is None:
@@ -169,12 +200,17 @@ def create_demo_runtime(
     if rewrite_chain is _UNSET:
         rewrite_chain = build_demo_rewrite_chain()
 
+    if reranker is _UNSET:
+        reranker = build_demo_reranker()
+
     if chat_executor is None:
         chat_executor = _build_chat_executor(
             vector_retriever,
             keyword_retriever,
             rewrite_chain,
+            reranker=reranker,
             execution_mode=selected_execution_mode,
+            retrieval_top_k=retrieval_top_k,
         )
 
     return DemoRuntime(
@@ -188,6 +224,7 @@ def create_demo_runtime(
         chat_executor=chat_executor,
         execution_mode=selected_execution_mode,
         vector_document_count=vector_document_count,
+        reranker=reranker,
     )
 
 
@@ -195,7 +232,10 @@ def _build_chat_executor(
     vector_retriever: SearchRetriever,
     keyword_retriever: SearchRetriever,
     rewrite_chain: Any | None,
+    *,
+    reranker: Reranker | None,
     execution_mode: str,
+    retrieval_top_k: int,
 ) -> Callable[[str, str], dict]:
     if execution_mode != "langgraph":
         raise ValueError("当前版本仅支持 langgraph 执行模式。")
@@ -206,7 +246,9 @@ def _build_chat_executor(
         rewrite_chain=rewrite_chain,
         max_iterations=LANGGRAPH_MAX_ITERATIONS,
         min_sources=LANGGRAPH_MIN_SOURCES,
-        top_k=RETRIEVER_TOP_K,
+        top_k=retrieval_top_k,
+        reranker=reranker,
+        rerank_top_k=RERANK_TOP_K if reranker is not None else None,
     )
     return lambda question, session_id: langgraph_executor.invoke(
         {"question": question, "session_id": session_id}

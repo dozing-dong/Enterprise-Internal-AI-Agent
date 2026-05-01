@@ -29,7 +29,12 @@ export interface HistoryResponse {
 }
 
 // SSE event payloads emitted by POST /chat/stream.
-export type StreamStage = "rewriting" | "retrieving" | "generating" | "titling";
+export type StreamStage =
+  | "rewriting"
+  | "retrieving"
+  | "reranking"
+  | "generating"
+  | "titling";
 
 export interface ProgressEvent {
   stage: StreamStage;

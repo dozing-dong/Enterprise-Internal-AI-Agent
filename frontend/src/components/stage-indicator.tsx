@@ -1,10 +1,18 @@
-import { Loader2, Pencil, Search, Sparkles, Tag } from "lucide-react";
+import {
+  ArrowDownWideNarrow,
+  Loader2,
+  Pencil,
+  Search,
+  Sparkles,
+  Tag,
+} from "lucide-react";
 import type { StreamStage } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 const STAGE_LABELS: Record<StreamStage, string> = {
   rewriting: "Rewriting query",
-  retrieving: "Retrieving knowledge",
+  retrieving: "Searching knowledge base",
+  reranking: "Reranking retrieved snippets",
   generating: "Generating answer",
   titling: "Naming this chat",
 };
@@ -12,6 +20,7 @@ const STAGE_LABELS: Record<StreamStage, string> = {
 const STAGE_ICONS: Record<StreamStage, React.ComponentType<{ className?: string }>> = {
   rewriting: Pencil,
   retrieving: Search,
+  reranking: ArrowDownWideNarrow,
   generating: Sparkles,
   titling: Tag,
 };
