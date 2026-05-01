@@ -40,9 +40,11 @@ def client():
     from backend.api import dependencies as deps_module
     from backend.api.app import app
     from backend.runtime import create_demo_runtime
+    from backend.storage import history as history_module
 
     fake_runtime = _build_fake_runtime()
     deps_module.set_runtime_factory(lambda: fake_runtime)
+    history_module.set_history_store(history_module.MemoryHistoryStore())
 
     try:
         with TestClient(app) as test_client:
@@ -50,6 +52,7 @@ def client():
     finally:
         deps_module.reset_runtime()
         deps_module.set_runtime_factory(create_demo_runtime)
+        history_module.reset_history_store()
 
 
 def test_root_returns_injected_execution_mode(client):

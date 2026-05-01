@@ -69,7 +69,7 @@ def print_sources(sources: list[dict]) -> None:
 
 
 def interactive_chat(runtime: DemoRuntime) -> None:
-    """启动命令行问答，并把聊天历史保存到本地文件中。"""
+    """启动命令行问答，并把聊天历史保存到当前配置的存储后端。"""
     session_id = input("请输入会话 ID（直接回车使用 default）：").strip() or "default"
     history_path = build_history_path(session_id)
 
@@ -77,7 +77,7 @@ def interactive_chat(runtime: DemoRuntime) -> None:
     print("步骤 4: 带历史存储的 RAG 问答")
     print("=" * 80)
     print(f"当前会话：{session_id}")
-    print(f"历史文件：{history_path}")
+    print(f"历史定位：{history_path}")
     print("输入 quit 或 exit 退出，输入 /clear 清空当前会话历史。\n")
 
     while True:

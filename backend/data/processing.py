@@ -152,7 +152,7 @@ def format_docs(docs: list[RagDocument]) -> str:
 
 
 def convert_docs_to_sources(docs: list[RagDocument]) -> list[dict]:
-    """把 LangChain Document 转成更适合 API 返回的 sources。"""
+    """把项目内 RagDocument 转成更适合 API 返回的 sources。"""
     sources = []
 
     # 每个检索结果都保留排序、正文和 metadata。

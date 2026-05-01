@@ -13,8 +13,6 @@ DOTENV_LOCAL_PATH = PROJECT_ROOT / ".env.local"
 load_dotenv(DOTENV_PATH, override=False)
 load_dotenv(DOTENV_LOCAL_PATH, override=False)
 
-HISTORY_DIR = PROJECT_ROOT / "chat_history"
-
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "langgraph")
 MODEL_PROVIDER = "bedrock"
 VECTOR_BACKEND = "pgvector"
@@ -69,3 +67,8 @@ BM25_TOKENIZER_NGRAM = int(os.getenv("BM25_TOKENIZER_NGRAM", "2"))
 
 LANGGRAPH_MAX_ITERATIONS = int(os.getenv("LANGGRAPH_MAX_ITERATIONS", "2"))
 LANGGRAPH_MIN_SOURCES = int(os.getenv("LANGGRAPH_MIN_SOURCES", "1"))
+
+# 会话历史存储后端：postgres / memory。
+# 默认走 postgres，与向量库共用同一个连接配置；memory 仅用于测试隔离。
+HISTORY_BACKEND = os.getenv("HISTORY_BACKEND", "postgres")
+HISTORY_TABLE = os.getenv("HISTORY_TABLE", "rag_chat_history")
