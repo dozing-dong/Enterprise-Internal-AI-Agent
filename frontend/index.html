@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEST01 RAG Demo</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="page">
+        <header class="hero">
+            <div class="hero__text">
+                <p class="hero__tag">Minimal Frontend</p>
+                <h1>TEST01 RAG Demo</h1>
+                <p class="hero__desc">
+                    这个页面不依赖 Node.js，也不依赖前端框架。
+                    它直接调用你的 FastAPI 接口，帮助你观察回答、来源和历史记录。
+                </p>
+            </div>
+            <div class="hero__panel">
+                <div class="status-card">
+                    <div class="status-card__title">服务状态</div>
+                    <div id="health-status" class="status-card__value">正在检查...</div>
+                    <div id="health-detail" class="status-card__meta">请稍候</div>
+                </div>
+            </div>
+        </header>
+
+        <main class="layout">
+            <section class="card control-card">
+                <h2>聊天控制台</h2>
+
+                <label class="field">
+                    <span>会话 ID</span>
+                    <input id="session-id" type="text" value="default">
+                </label>
+
+                <label class="field">
+                    <span>问题</span>
+                    <textarea id="question-input" rows="5" placeholder="请输入你的问题"></textarea>
+                </label>
+
+                <div class="actions">
+                    <button id="ask-button" class="button button--primary">发送问题</button>
+                    <button id="history-button" class="button">查看历史</button>
+                    <button id="clear-button" class="button button--danger">清空历史</button>
+                </div>
+            </section>
+
+            <section class="card result-card">
+                <h2>回答</h2>
+                <div id="answer-box" class="answer-box">这里会显示模型回答。</div>
+            </section>
+
+            <section class="card source-card">
+                <h2>参考片段</h2>
+                <div id="sources-box" class="list-box">
+                    <div class="empty-state">这里会显示检索到的参考片段。</div>
+                </div>
+            </section>
+
+            <section class="card history-card">
+                <h2>历史记录</h2>
+                <div id="history-box" class="list-box">
+                    <div class="empty-state">这里会显示会话历史。</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

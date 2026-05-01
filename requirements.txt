@@ -1,0 +1,14 @@
+langchain>=0.3
+langchain-community>=0.3
+langchain-core>=0.3
+langgraph>=0.2
+langchain-aws>=0.2
+langchain-postgres>=0.0.12
+langchain-text-splitters>=0.3
+pgvector>=0.3
+psycopg[binary]>=3.2
+rank-bm25>=0.2
+fastapi>=0.115
+uvicorn>=0.30
+ragas>=0.3
+datasets>=2.18
