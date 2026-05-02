@@ -1,5 +1,8 @@
 from typing import Any, Callable
 
+from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
+from backend.agent.runner import AgentRunner
+from backend.agent.tools import ToolRegistry
 from backend.config import (
     EXECUTION_MODE,
     LANGGRAPH_MAX_ITERATIONS,
@@ -48,6 +51,8 @@ class DemoRuntime:
         execution_mode: str,
         vector_document_count: int,
         reranker: Reranker | None = None,
+        tool_registry: ToolRegistry | None = None,
+        agent_runner: AgentRunner | None = None,
     ) -> None:
         # 保存原始文档。
         self.documents = documents
@@ -81,6 +86,12 @@ class DemoRuntime:
 
         # 保存重排器（可能为 None，表示未启用重排）。
         self.reranker = reranker
+
+        # Agent 模式相关：工具注册表与运行器。
+        # 在没有显式注入时，由 ``create_demo_runtime`` 统一构建；
+        # 测试场景允许传入 None（不启用 agent 模式）。
+        self.tool_registry = tool_registry
+        self.agent_runner = agent_runner
 
 
 def prepare_documents_for_rag() -> tuple[list[RagDocument], list[RagDocument]]:
@@ -141,6 +152,19 @@ def _resolve_retrieval_top_k() -> int:
     return RETRIEVER_TOP_K
 
 
+def build_default_tool_registry(
+    chat_executor: Callable[[str, str], dict],
+) -> ToolRegistry:
+    """构建默认工具集：rag_answer + current_time。
+
+    抽成独立函数主要为方便单测注入自定义工具。
+    """
+    registry = ToolRegistry()
+    registry.register(RagAnswerTool(chat_executor))
+    registry.register(CurrentTimeTool())
+    return registry
+
+
 def create_demo_runtime(
     execution_mode: str | None = None,
     *,
@@ -154,6 +178,8 @@ def create_demo_runtime(
     reranker: Any = _UNSET,
     chat_executor: Callable[[str, str], dict] | None = None,
     vector_document_count: int | None = None,
+    tool_registry: ToolRegistry | None = None,
+    agent_runner: AgentRunner | None = None,
 ) -> DemoRuntime:
     """创建在线服务和 CLI 需要的运行时对象。
 
@@ -213,6 +239,15 @@ def create_demo_runtime(
             retrieval_top_k=retrieval_top_k,
         )
 
+    if tool_registry is None:
+        tool_registry = build_default_tool_registry(chat_executor)
+
+    if agent_runner is None:
+        agent_runner = AgentRunner(
+            tool_registry,
+            chat_executor_fallback=chat_executor,
+        )
+
     return DemoRuntime(
         documents,
         split_documents_list,
@@ -225,6 +260,8 @@ def create_demo_runtime(
         execution_mode=selected_execution_mode,
         vector_document_count=vector_document_count,
         reranker=reranker,
+        tool_registry=tool_registry,
+        agent_runner=agent_runner,
     )
 
 

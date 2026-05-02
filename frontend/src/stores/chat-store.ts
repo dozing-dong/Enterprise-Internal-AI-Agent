@@ -9,11 +9,13 @@ import {
 import { streamChat } from "@/lib/sse";
 import type {
   ChatMessage,
+  ChatMode,
   SessionItem,
   StreamStage,
 } from "@/types/api";
 
 const ACTIVE_SESSION_KEY = "rag-chat:active-session-id";
+const CHAT_MODE_KEY = "rag-chat:mode";
 
 function loadActiveSession(): string | null {
   if (typeof window === "undefined") return null;
@@ -37,6 +39,25 @@ function saveActiveSession(sessionId: string | null): void {
   }
 }
 
+function loadChatMode(): ChatMode {
+  if (typeof window === "undefined") return "rag";
+  try {
+    const stored = window.localStorage.getItem(CHAT_MODE_KEY);
+    return stored === "agent" ? "agent" : "rag";
+  } catch {
+    return "rag";
+  }
+}
+
+function saveChatMode(mode: ChatMode): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CHAT_MODE_KEY, mode);
+  } catch {
+    // ignore
+  }
+}
+
 function makeId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -54,6 +75,7 @@ interface ChatState {
   error: string | null;
   isLoadingSessions: boolean;
   isLoadingHistory: boolean;
+  mode: ChatMode;
 
   initialize: () => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -64,6 +86,7 @@ interface ChatState {
   deleteSessionById: (sessionId: string) => Promise<void>;
   sendMessage: (question: string) => Promise<void>;
   clearError: () => void;
+  setMode: (mode: ChatMode) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -76,6 +99,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   isLoadingSessions: false,
   isLoadingHistory: false,
+  mode: loadChatMode(),
 
   initialize: async () => {
     set({ isLoadingSessions: true, error: null });
@@ -226,11 +250,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
     };
 
+    const mode = get().mode;
     set((state) => ({
       messages: [...state.messages, userMessage, assistantPlaceholder],
       isStreaming: true,
-      stage: "rewriting",
-      stageMessage: "Refining your query...",
+      stage: mode === "agent" ? "deciding" : "rewriting",
+      stageMessage:
+        mode === "agent" ? "Thinking..." : "Refining your query...",
       error: null,
     }));
 
@@ -248,8 +274,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await streamChat({
         sessionId,
         question: trimmed,
+        mode,
         onProgress: (event) => {
           set({ stage: event.stage, stageMessage: event.message ?? null });
+        },
+        onToolCall: (event) => {
+          // Reflect the active tool name in the indicator. Even if the
+          // backend already sent a `progress(tool_running)` event, replacing
+          // the message here gives the user a more concrete cue.
+          set({
+            stage: "tool_running",
+            stageMessage: `Calling tool: ${event.name}`,
+          });
         },
         onSources: (event) => {
           updateAssistant((msg) => ({
@@ -310,4 +346,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  setMode: (mode) => {
+    saveChatMode(mode);
+    set({ mode });
+  },
 }));

@@ -1,9 +1,12 @@
 import type {
+  ChatMode,
   DoneEvent,
   ErrorEvent,
   ProgressEvent,
   SourcesEvent,
   TokenEvent,
+  ToolCallEvent,
+  ToolResultEvent,
 } from "@/types/api";
 
 // Lightweight SSE client over fetch + ReadableStream.
@@ -16,12 +19,17 @@ export interface StreamHandlers {
   onToken?: (event: TokenEvent) => void;
   onDone?: (event: DoneEvent) => void;
   onError?: (event: ErrorEvent) => void;
+  // Agent-mode only callbacks; safe to omit when running in rag mode.
+  onToolCall?: (event: ToolCallEvent) => void;
+  onToolResult?: (event: ToolResultEvent) => void;
 }
 
 export interface StreamChatOptions extends StreamHandlers {
   sessionId: string;
   question: string;
   signal?: AbortSignal;
+  // Defaults to "rag" on the backend if omitted.
+  mode?: ChatMode;
 }
 
 interface ParsedEvent {
@@ -76,13 +84,25 @@ function dispatch(parsed: ParsedEvent, handlers: StreamHandlers): void {
     case "error":
       handlers.onError?.(payload as ErrorEvent);
       break;
+    case "tool_call":
+      handlers.onToolCall?.(payload as ToolCallEvent);
+      break;
+    case "tool_result":
+      handlers.onToolResult?.(payload as ToolResultEvent);
+      break;
     default:
       break;
   }
 }
 
 export async function streamChat(opts: StreamChatOptions): Promise<void> {
-  const { sessionId, question, signal, ...handlers } = opts;
+  const { sessionId, question, signal, mode, ...handlers } = opts;
+
+  const body: Record<string, unknown> = {
+    session_id: sessionId,
+    question,
+  };
+  if (mode) body.mode = mode;
 
   const response = await fetch("/chat/stream", {
     method: "POST",
@@ -90,7 +110,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({ session_id: sessionId, question }),
+    body: JSON.stringify(body),
     signal,
   });
 

@@ -1,10 +1,12 @@
 import {
   ArrowDownWideNarrow,
+  Brain,
   Loader2,
   Pencil,
   Search,
   Sparkles,
   Tag,
+  Wrench,
 } from "lucide-react";
 import type { StreamStage } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -15,6 +17,9 @@ const STAGE_LABELS: Record<StreamStage, string> = {
   reranking: "Reranking retrieved snippets",
   generating: "Generating answer",
   titling: "Naming this chat",
+  // Agent-mode stages.
+  deciding: "Thinking",
+  tool_running: "Calling tool",
 };
 
 const STAGE_ICONS: Record<StreamStage, React.ComponentType<{ className?: string }>> = {
@@ -23,6 +28,8 @@ const STAGE_ICONS: Record<StreamStage, React.ComponentType<{ className?: string 
   reranking: ArrowDownWideNarrow,
   generating: Sparkles,
   titling: Tag,
+  deciding: Brain,
+  tool_running: Wrench,
 };
 
 interface StageIndicatorProps {

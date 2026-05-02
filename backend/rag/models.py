@@ -92,24 +92,39 @@ def chat_completion(
 
 
 def _build_converse_request(
-    messages: Sequence[dict[str, str]],
+    messages: Sequence[dict[str, Any]],
     *,
     system_prompt: str | None,
     temperature: float,
+    tool_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """组装 Bedrock Converse / ConverseStream 共用的请求体。"""
+    """组装 Bedrock Converse / ConverseStream 共用的请求体。
+
+    支持两种 ``content`` 形式：
+    - ``str``：普通文本消息（兼容现有调用方）。
+    - ``list[dict]``：富内容块（toolUse / toolResult / 多段 text 等），
+      调用方需自行符合 Bedrock 块结构，函数原样透传。
+
+    ``tool_config`` 不为 None 时，注入到顶层 ``toolConfig`` 字段，
+    用来声明本次 Converse 调用可用的工具集。
+    """
     conversation_messages: list[dict[str, Any]] = []
     for message in messages:
         role = message.get("role", "user")
         content = message.get("content", "")
-        if not isinstance(content, str):
+        if isinstance(content, str):
+            blocks: list[dict[str, Any]] = [{"text": content}]
+        elif isinstance(content, list):
+            # 富内容形式：调用方必须保证每个 block 是 Bedrock 接受的结构
+            # （toolUse / toolResult / text / image 等）。这里不做深拷贝，
+            # 调用方不应再修改这些 dict。
+            blocks = [block for block in content if isinstance(block, dict)]
+            if not blocks:
+                continue
+        else:
             continue
-        conversation_messages.append(
-            {
-                "role": role,
-                "content": [{"text": content}],
-            }
-        )
+
+        conversation_messages.append({"role": role, "content": blocks})
 
     if not conversation_messages:
         raise ValueError("messages 不能为空。")
@@ -122,6 +137,9 @@ def _build_converse_request(
 
     if system_prompt:
         request["system"] = [{"text": system_prompt}]
+
+    if tool_config:
+        request["toolConfig"] = tool_config
 
     return request
 
@@ -157,6 +175,175 @@ def chat_completion_stream(
         text = delta.get("text")
         if isinstance(text, str) and text:
             yield text
+
+
+def _parse_converse_tool_response(response: dict[str, Any]) -> dict[str, Any]:
+    """从 Bedrock Converse 的非流式响应里抽出 text + toolUse。"""
+    content_blocks = (
+        response.get("output", {}).get("message", {}).get("content", []) or []
+    )
+
+    text_parts: list[str] = []
+    tool_uses: list[dict[str, Any]] = []
+    for block in content_blocks:
+        if not isinstance(block, dict):
+            continue
+        if isinstance(block.get("text"), str):
+            text_parts.append(block["text"])
+            continue
+        tool_use = block.get("toolUse")
+        if isinstance(tool_use, dict):
+            tool_uses.append(
+                {
+                    "tool_use_id": tool_use.get("toolUseId", ""),
+                    "name": tool_use.get("name", ""),
+                    "input": tool_use.get("input") or {},
+                }
+            )
+
+    return {
+        "stop_reason": response.get("stopReason", ""),
+        "text": "\n".join(text_parts).strip(),
+        "tool_uses": tool_uses,
+        "raw_content": content_blocks,
+    }
+
+
+def chat_completion_with_tools(
+    messages: Sequence[dict[str, Any]],
+    tool_config: dict[str, Any],
+    *,
+    system_prompt: str | None = None,
+    temperature: float = 0.0,
+) -> dict[str, Any]:
+    """带工具声明的 Converse 调用（非流式）。
+
+    返回:
+        {
+            "stop_reason": str,            # "end_turn" / "tool_use" / "max_tokens" / ...
+            "text": str,                   # 模型文本输出（可能为空，尤其在 tool_use 时）
+            "tool_uses": [                 # 模型本轮请求调用的工具
+                {"tool_use_id": str, "name": str, "input": dict}
+            ],
+            "raw_content": list[dict],     # 原始 content blocks，便于回灌到下一轮 messages
+        }
+    """
+    client = _get_bedrock_client()
+    request = _build_converse_request(
+        messages,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        tool_config=tool_config,
+    )
+    response = client.converse(**request)
+    return _parse_converse_tool_response(response)
+
+
+def chat_completion_with_tools_stream(
+    messages: Sequence[dict[str, Any]],
+    tool_config: dict[str, Any],
+    *,
+    system_prompt: str | None = None,
+    temperature: float = 0.0,
+) -> Iterator[dict[str, Any]]:
+    """带工具声明的 ConverseStream 调用。
+
+    向调用方逐步 yield 语义化事件：
+
+    - ``{"type": "text_delta", "text": "..."}``: 模型文本片段，可直接转 SSE token。
+    - ``{"type": "tool_use", "tool_use_id": ..., "name": ..., "input": {...}}``:
+      模型一次完整的工具调用决策（已合并并解析过 input JSON）。
+    - ``{"type": "stop", "stop_reason": "..."}``: 单次 Converse 调用结束。
+
+    设计要点：
+    - Bedrock 把 toolUse 的 input 以 JSON 字符串增量下发；这里负责按
+      ``contentBlockIndex`` 累积，到 ``contentBlockStop`` 时一次性解析。
+    - text_delta 直接透传，调用方决定是否流给前端。
+    """
+    client = _get_bedrock_client()
+    request = _build_converse_request(
+        messages,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        tool_config=tool_config,
+    )
+
+    response = client.converse_stream(**request)
+    stream = response.get("stream")
+    if stream is None:
+        return
+
+    # contentBlockIndex -> {"type": "tool_use"|"text", "tool_use_id"?, "name"?, "input_buffer"?}
+    blocks: dict[int, dict[str, Any]] = {}
+
+    for event in stream:
+        if "contentBlockStart" in event:
+            start_event = event["contentBlockStart"]
+            index = start_event.get("contentBlockIndex", -1)
+            start = start_event.get("start") or {}
+            tool_use_start = start.get("toolUse")
+            if isinstance(tool_use_start, dict):
+                blocks[index] = {
+                    "type": "tool_use",
+                    "tool_use_id": tool_use_start.get("toolUseId", ""),
+                    "name": tool_use_start.get("name", ""),
+                    "input_buffer": "",
+                }
+            continue
+
+        if "contentBlockDelta" in event:
+            delta_event = event["contentBlockDelta"]
+            index = delta_event.get("contentBlockIndex", -1)
+            delta = delta_event.get("delta") or {}
+
+            text = delta.get("text")
+            if isinstance(text, str) and text:
+                yield {"type": "text_delta", "text": text}
+                continue
+
+            tool_use_delta = delta.get("toolUse")
+            if isinstance(tool_use_delta, dict):
+                input_fragment = tool_use_delta.get("input")
+                if isinstance(input_fragment, str):
+                    block = blocks.setdefault(
+                        index,
+                        {
+                            "type": "tool_use",
+                            "tool_use_id": "",
+                            "name": "",
+                            "input_buffer": "",
+                        },
+                    )
+                    block["input_buffer"] = (
+                        block.get("input_buffer", "") + input_fragment
+                    )
+            continue
+
+        if "contentBlockStop" in event:
+            stop_event = event["contentBlockStop"]
+            index = stop_event.get("contentBlockIndex", -1)
+            block = blocks.pop(index, None)
+            if block and block.get("type") == "tool_use":
+                raw_input = block.get("input_buffer", "")
+                try:
+                    parsed_input = json.loads(raw_input) if raw_input else {}
+                except json.JSONDecodeError:
+                    parsed_input = {"_raw": raw_input}
+                yield {
+                    "type": "tool_use",
+                    "tool_use_id": block.get("tool_use_id", ""),
+                    "name": block.get("name", ""),
+                    "input": parsed_input,
+                }
+            continue
+
+        if "messageStop" in event:
+            stop_reason = event["messageStop"].get("stopReason", "")
+            yield {"type": "stop", "stop_reason": stop_reason}
+            continue
+
+        # 其他事件（messageStart / metadata / 异常）此处忽略，
+        # 业务层不需要这些细节；如未来要算 token 成本可在此扩展。
 
 
 def bedrock_rerank(
