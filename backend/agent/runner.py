@@ -1,7 +1,7 @@
 """Agent 主循环：plan -> execute -> observe，直到拿到最终回答。
 
 两个入口：
-- ``run``：非流式，返回 ``AgentRunResult``，给 POST /chat 用。
+- ``run``：非流式，LangGraph StateGraph 驱动，返回 ``AgentRunResult``，给 POST /chat 用。
 - ``run_stream``：流式生成器，逐步 yield ``AgentEvent``，给 POST /chat/stream 用。
 
 设计原则：
@@ -17,42 +17,22 @@ from collections.abc import Iterator
 from typing import Any
 
 from backend.agent.builtin_tools import ChatExecutor
+from backend.agent.graph import build_agent_graph
 from backend.agent.policy import AGENT_MAX_STEPS, AGENT_SYSTEM_PROMPT
-from backend.agent.planner import plan_step, plan_step_stream
+from backend.agent.planner import plan_step_stream
 from backend.agent.schemas import (
     AgentEvent,
     AgentRunResult,
     AgentStep,
     ToolCall,
-    ToolResult,
+)
+from backend.agent.steps import (
+    build_initial_messages,
+    build_tool_result_message,
+    summarize_tool_data,
 )
 from backend.agent.tools import ToolRegistry
-from backend.storage.history import (
-    append_session_messages,
-    read_session_history,
-)
-
-
-# 用于把 ToolResult 拼回 Bedrock messages 的标识。
-# Bedrock 期望 toolResult.status 在 "success" / "error" 二选一。
-def _tool_result_status(ok: bool) -> str:
-    return "success" if ok else "error"
-
-
-def _build_tool_result_message(result: ToolResult) -> dict[str, Any]:
-    """把 ToolResult 包装成可塞进 Converse messages 的 user 消息。"""
-    return {
-        "role": "user",
-        "content": [
-            {
-                "toolResult": {
-                    "toolUseId": result.tool_use_id,
-                    "content": [{"text": result.to_observation_text()}],
-                    "status": _tool_result_status(result.ok),
-                }
-            }
-        ],
-    }
+from backend.storage.history import append_session_messages
 
 
 class AgentRunner:
@@ -75,24 +55,11 @@ class AgentRunner:
         self._chat_executor_fallback = chat_executor_fallback
         self._max_steps = max_steps
         self._system_prompt = system_prompt
-
-    # ---- 共用工具方法 -----------------------------------------------------
-
-    def _initial_messages(
-        self,
-        question: str,
-        session_id: str,
-    ) -> list[dict[str, Any]]:
-        """加载历史 + 当前问题，得到本次调用的初始消息列表。"""
-        history = read_session_history(session_id)
-        messages: list[dict[str, Any]] = []
-        for item in history:
-            role = item.get("role")
-            content = item.get("content")
-            if isinstance(role, str) and isinstance(content, str):
-                messages.append({"role": role, "content": content})
-        messages.append({"role": "user", "content": question})
-        return messages
+        self._graph = build_agent_graph(
+            registry,
+            system_prompt=system_prompt,
+            max_steps=max_steps,
+        )
 
     def _persist_turn(
         self,
@@ -139,88 +106,29 @@ class AgentRunner:
             fallback=True,
         )
 
-    # ---- 非流式入口 -------------------------------------------------------
-
     def run(self, question: str, session_id: str) -> AgentRunResult:
         """同步执行 agent，直到拿到最终答案或耗尽预算。
 
         任何异常都会触发一次 fallback，对外保证“总能给出答复”。
         """
         decision_trace: list[dict] = []
-        messages = self._initial_messages(question, session_id)
-        sources: list[dict] = []
-        retrieval_question: str | None = None
-        final_text = ""
+        messages = build_initial_messages(question, session_id)
 
         try:
-            for step_index in range(1, self._max_steps + 1):
-                response = plan_step(
-                    messages,
-                    registry=self._registry,
-                    system_prompt=self._system_prompt,
-                )
-                stop_reason = response.get("stop_reason", "")
-                tool_uses = response.get("tool_uses", [])
-                step_text = response.get("text", "")
-
-                if stop_reason == "tool_use" and tool_uses:
-                    # 当前策略：每轮只执行第一个 tool_use，避免并发分支
-                    # 给观测和 history 带来复杂度。
-                    first_use = tool_uses[0]
-                    call = ToolCall(
-                        name=first_use["name"],
-                        arguments=first_use.get("input") or {},
-                        tool_use_id=first_use["tool_use_id"],
-                    )
-                    result = self._registry.execute(
-                        call,
-                        context={"session_id": session_id},
-                    )
-
-                    if result.ok and call.name == "rag_answer":
-                        sources = result.data.get("sources", []) or sources
-                        retrieval_question = (
-                            result.data.get("retrieval_question")
-                            or retrieval_question
-                        )
-
-                    decision_trace.append(
-                        AgentStep(
-                            index=step_index,
-                            thought=step_text or None,
-                            tool_call=call,
-                            tool_result=result,
-                        ).to_dict()
-                    )
-
-                    # 把模型输出（含 toolUse 块）原样拼回，再附上 toolResult
-                    # 让模型继续推理。
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": response.get("raw_content", []),
-                        }
-                    )
-                    messages.append(_build_tool_result_message(result))
-                    continue
-
-                # 模型给出最终答案（end_turn 或没有 tool_use 的其它停止理由）。
-                final_text = step_text
-                decision_trace.append(
-                    AgentStep(
-                        index=step_index,
-                        final_answer=final_text,
-                    ).to_dict()
-                )
-                break
-            else:
-                # for-else：max_steps 用尽仍未给出最终答案，触发 fallback。
-                return self._fallback_via_rag(
-                    question,
-                    session_id,
-                    reason="max_steps_exhausted",
-                    decision_trace=decision_trace,
-                )
+            out = self._graph.invoke(
+                {
+                    "question": question,
+                    "session_id": session_id,
+                    "messages": messages,
+                    "decision_trace": [],
+                    "sources": [],
+                    "retrieval_question": None,
+                    "step_index": 0,
+                    "last_response": {},
+                    "stop_reason": "",
+                    "final_text": "",
+                }
+            )
         except Exception as exc:  # noqa: BLE001 - 故意吞下，统一兜底
             return self._fallback_via_rag(
                 question,
@@ -229,12 +137,22 @@ class AgentRunner:
                 decision_trace=decision_trace,
             )
 
+        decision_trace = list(out.get("decision_trace", []) or [])
+        sources = list(out.get("sources", []) or [])
+        retrieval_question = out.get("retrieval_question")
+        final_text = (out.get("final_text") or "").strip()
+
         if not final_text:
-            # 模型异常地没产出任何文本，用 fallback 兜一份答复。
+            last = decision_trace[-1] if decision_trace else {}
+            reason = (
+                "empty_final_text"
+                if "final_answer" in last
+                else "max_steps_exhausted"
+            )
             return self._fallback_via_rag(
                 question,
                 session_id,
-                reason="empty_final_text",
+                reason=reason,
                 decision_trace=decision_trace,
             )
 
@@ -247,8 +165,6 @@ class AgentRunner:
             decision_trace=decision_trace,
             fallback=False,
         )
-
-    # ---- 流式入口 ---------------------------------------------------------
 
     def run_stream(
         self,
@@ -267,7 +183,7 @@ class AgentRunner:
         - ``error``: ``{detail}`` 兜底失败时下发。
         """
         decision_trace: list[dict] = []
-        messages = self._initial_messages(question, session_id)
+        messages = build_initial_messages(question, session_id)
         sources: list[dict] = []
         retrieval_question: str | None = None
         final_answer_chunks: list[str] = []
@@ -280,7 +196,6 @@ class AgentRunner:
 
             for step_index in range(1, self._max_steps + 1):
                 step_text_chunks: list[str] = []
-                # 对应当前步骤里收集到的 toolUse（可能多个，但执行只取首个）。
                 step_tool_uses: list[dict[str, Any]] = []
                 stop_reason = ""
 
@@ -350,7 +265,7 @@ class AgentRunner:
                             "ok": result.ok,
                             "error": result.error,
                             "latency_ms": result.latency_ms,
-                            "summary": _summarize_tool_data(result),
+                            "summary": summarize_tool_data(result),
                         },
                     )
 
@@ -380,7 +295,6 @@ class AgentRunner:
                         ).to_dict()
                     )
 
-                    # 重建 assistant raw_content：合并本步收集到的 text 与 toolUse
                     raw_content: list[dict[str, Any]] = []
                     joined_text = "".join(step_text_chunks)
                     if joined_text:
@@ -397,7 +311,7 @@ class AgentRunner:
                         )
 
                     messages.append({"role": "assistant", "content": raw_content})
-                    messages.append(_build_tool_result_message(result))
+                    messages.append(build_tool_result_message(result))
 
                     yield AgentEvent(
                         "progress",
@@ -408,7 +322,6 @@ class AgentRunner:
                     )
                     continue
 
-                # 末尾步骤
                 decision_trace.append(
                     AgentStep(
                         index=step_index,
@@ -417,7 +330,6 @@ class AgentRunner:
                 )
                 break
             else:
-                # max_steps 用尽，走 fallback。
                 yield from self._stream_fallback(
                     question,
                     session_id,
@@ -517,8 +429,6 @@ class AgentRunner:
             )
 
         if not already_streamed and answer:
-            # 没流过任何 token 时，把答案一次性当 token 下发，
-            # 前端的 token 累积逻辑可以无缝兼容。
             yield AgentEvent("token", {"text": answer})
 
         yield AgentEvent(
@@ -532,21 +442,3 @@ class AgentRunner:
                 "fallback": True,
             },
         )
-
-
-def _summarize_tool_data(result: ToolResult) -> dict[str, Any]:
-    """提取 tool 结果中关键字段下发给前端，避免一次性塞太多文本。"""
-    if not result.ok:
-        return {"error": result.error}
-    if result.name == "rag_answer":
-        sources = result.data.get("sources", []) or []
-        return {
-            "sources_count": len(sources),
-            "retrieval_question": result.data.get("retrieval_question"),
-        }
-    if result.name == "current_time":
-        return {
-            "iso": result.data.get("iso"),
-            "timezone": result.data.get("timezone"),
-        }
-    return {}

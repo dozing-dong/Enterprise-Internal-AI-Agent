@@ -29,6 +29,7 @@ from backend.rag.retrievers import (
     rebuild_vectorstore,
 )
 from backend.rag.rewrite import build_query_rewrite_chain
+from backend.rag.service import RagService
 from backend.types import RagDocument
 
 
@@ -53,6 +54,7 @@ class DemoRuntime:
         reranker: Reranker | None = None,
         tool_registry: ToolRegistry | None = None,
         agent_runner: AgentRunner | None = None,
+        rag_service: RagService | None = None,
     ) -> None:
         # 保存原始文档。
         self.documents = documents
@@ -92,6 +94,7 @@ class DemoRuntime:
         # 测试场景允许传入 None（不启用 agent 模式）。
         self.tool_registry = tool_registry
         self.agent_runner = agent_runner
+        self.rag_service = rag_service
 
 
 def prepare_documents_for_rag() -> tuple[list[RagDocument], list[RagDocument]]:
@@ -180,6 +183,7 @@ def create_demo_runtime(
     vector_document_count: int | None = None,
     tool_registry: ToolRegistry | None = None,
     agent_runner: AgentRunner | None = None,
+    rag_service: RagService | None = None,
 ) -> DemoRuntime:
     """创建在线服务和 CLI 需要的运行时对象。
 
@@ -248,6 +252,15 @@ def create_demo_runtime(
             chat_executor_fallback=chat_executor,
         )
 
+    if rag_service is None:
+        rag_service = RagService(
+            chat_executor=chat_executor,
+            vector_retriever=vector_retriever,
+            keyword_retriever=keyword_retriever,
+            rewrite_chain=rewrite_chain,
+            reranker=reranker,
+        )
+
     return DemoRuntime(
         documents,
         split_documents_list,
@@ -262,6 +275,7 @@ def create_demo_runtime(
         reranker=reranker,
         tool_registry=tool_registry,
         agent_runner=agent_runner,
+        rag_service=rag_service,
     )
 
 
