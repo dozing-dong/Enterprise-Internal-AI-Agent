@@ -10,14 +10,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -41,9 +33,6 @@ export function Sidebar() {
   const renameSessionById = useChatStore((s) => s.renameSessionById);
   const deleteSessionById = useChatStore((s) => s.deleteSessionById);
 
-  const [pendingDelete, setPendingDelete] = React.useState<SessionItem | null>(
-    null,
-  );
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
 
@@ -74,13 +63,6 @@ export function Sidebar() {
   const cancelRename = () => {
     setRenamingId(null);
     setRenameValue("");
-  };
-
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    const target = pendingDelete;
-    setPendingDelete(null);
-    await deleteSessionById(target.session_id);
   };
 
   return (
@@ -258,7 +240,7 @@ export function Sidebar() {
                           <DropdownMenuItem
                             onSelect={(e) => {
                               e.preventDefault();
-                              setPendingDelete(session);
+                              void deleteSessionById(session.session_id);
                             }}
                             className="text-destructive focus:text-destructive"
                           >
@@ -280,42 +262,6 @@ export function Sidebar() {
         Sessions are identified by <code className="text-foreground/80">session_id</code>;
         each new chat gets a fresh ID.
       </div>
-
-      <Dialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete this chat?</DialogTitle>
-            <DialogDescription>
-              This will permanently remove{" "}
-              <span className="font-medium text-foreground">
-                {pendingDelete?.title}
-              </span>{" "}
-              and its message history. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setPendingDelete(null)}
-              type="button"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDelete}
-              type="button"
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </aside>
   );
 }
