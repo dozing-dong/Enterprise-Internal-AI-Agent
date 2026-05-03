@@ -28,8 +28,9 @@ export interface HistoryResponse {
   messages: HistoryMessage[];
 }
 
-// Chat execution mode. "rag" = fixed LangGraph pipeline, "agent" = ReAct loop.
-export type ChatMode = "rag" | "agent";
+// Chat execution mode. "rag" = fixed LangGraph pipeline, "agent" = ReAct loop,
+// "multi_agent" = Supervisor + Policy + ExternalContext + Writer multi-agent flow.
+export type ChatMode = "rag" | "agent" | "multi_agent";
 
 // SSE event payloads emitted by POST /chat/stream.
 // Stream is intentionally minimal: token / sources / done / error.
@@ -44,8 +45,9 @@ export interface TokenEvent {
   text: string;
 }
 
-// Unified trace step shown via the trace popover. Both RAG and Agent modes
-// surface the same shape so the UI can render once.
+// Unified trace step shown via the trace popover. RAG / Agent / Multi-Agent
+// all surface the same shape so the UI can render once. ``agent`` is only
+// populated in multi_agent mode (supervisor / policy / external_context / writer).
 export interface TraceStep {
   step: number;
   name: string;
@@ -54,6 +56,7 @@ export interface TraceStep {
   ok?: boolean;
   latency_ms?: number | null;
   error?: string | null;
+  agent?: string | null;
 }
 
 export interface DoneEvent {
@@ -64,6 +67,8 @@ export interface DoneEvent {
   retrieval_question: string;
   mode?: ChatMode;
   trace?: TraceStep[];
+  // Sub-agents invoked during a multi_agent turn (in order, deduplicated).
+  agents_invoked?: string[];
 }
 
 export interface ErrorEvent {
@@ -78,5 +83,7 @@ export interface ChatMessage {
   sources?: SourceItem[];
   retrievalQuestion?: string;
   trace?: TraceStep[];
+  // Sub-agents involved in this assistant turn (multi_agent mode only).
+  agentsInvoked?: string[];
   isStreaming?: boolean;
 }

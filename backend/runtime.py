@@ -2,8 +2,12 @@
 
 把所有依赖一次性构造好暴露给 CLI / API：
 - ``rag_graph``：编译好的 RAG LangGraph，``.invoke()`` 与 ``.stream()`` 通用。
-- ``agent_graph``：编译好的 Agent ReAct LangGraph；其工具集中包含
+- ``agent_graph``：编译好的单 Agent ReAct LangGraph；其工具集中包含
   ``rag_answer``，由 ``rag_graph`` 注入；不再走任何 fallback。
+- ``multi_agent_graph``：编译好的多 Agent 编排 LangGraph（Supervisor +
+  Policy + External + Writer 四个层级 subgraph）；外部工具来自 MCP。
+  装配失败（如 langchain-mcp-adapters 不可用、Node 未安装、env 缺失）时
+  降级为 ``None``，``mode=multi_agent`` 的请求会返回 503，rag/agent 不受影响。
 """
 
 from typing import Any
@@ -21,6 +25,7 @@ from backend.config import (
     EMPLOYEE_SEED_ON_STARTUP,
     LANGGRAPH_MAX_ITERATIONS,
     LANGGRAPH_MIN_SOURCES,
+    MULTI_AGENT_ENABLED,
     QUERY_REWRITE_ENABLED,
     RERANK_BACKEND,
     RERANK_ENABLED,
@@ -28,6 +33,8 @@ from backend.config import (
     RETRIEVER_CANDIDATE_K,
     RETRIEVER_TOP_K,
 )
+from backend.mcp import MCPLoadResult, load_external_mcp_tools
+from backend.multi_agent import build_multi_agent_graph
 from backend.data.knowledge_base import build_documents
 from backend.data.processing import split_documents
 from backend.rag.chain import build_rag_graph
@@ -70,6 +77,8 @@ class DemoRuntime:
         agent_graph: Any,
         vector_document_count: int,
         reranker: Reranker | None = None,
+        multi_agent_graph: Any | None = None,
+        mcp_load_result: MCPLoadResult | None = None,
     ) -> None:
         self.documents = documents
         self.split_documents_list = split_documents_list
@@ -79,9 +88,13 @@ class DemoRuntime:
         self.keyword_retriever = keyword_retriever
         self.rewrite_chain = rewrite_chain
 
-        # 两个核心可流式 LangGraph 应用。
+        # 三个核心可流式 LangGraph 应用。
         self.rag_graph = rag_graph
         self.agent_graph = agent_graph
+        # multi_agent_graph 可能为 None（依赖未装 / MCP 启动失败）。
+        self.multi_agent_graph = multi_agent_graph
+        # 持有 MCP 客户端 / 加载结果的引用，避免被 GC 关闭底层 stdio 连接。
+        self.mcp_load_result = mcp_load_result
 
         self.execution_mode = EXECUTION_MODE_NAME
         self.vector_document_count = vector_document_count
@@ -172,6 +185,44 @@ def _maybe_seed_employee_directory(store: EmployeeStore) -> None:
         logger.exception("employee directory seeding skipped due to error")
 
 
+def _build_multi_agent_graph_safely(
+    *,
+    rag_graph: Any,
+    employee_store: EmployeeStore | None,
+) -> tuple[Any | None, MCPLoadResult | None]:
+    """启动期"尽力"装配多 Agent 图。
+
+    任何环节失败（MCP 工具加载失败、subgraph 编译失败）都返回 ``(None, None)``。
+    rag / agent 模式不受影响。
+    """
+    if not MULTI_AGENT_ENABLED:
+        logger.info("MULTI_AGENT_ENABLED=false，跳过多 Agent 图装配。")
+        return None, None
+
+    try:
+        load_result = load_external_mcp_tools()
+    except Exception:  # noqa: BLE001
+        logger.exception("加载 MCP 工具时出错，多 Agent 图降级为无外部工具。")
+        load_result = MCPLoadResult()
+
+    try:
+        graph = build_multi_agent_graph(
+            rag_graph=rag_graph,
+            mcp_tools=load_result.tools,
+            employee_store=employee_store,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("多 Agent 图编译失败，已降级为不可用。")
+        return None, load_result
+
+    if load_result.failed_servers:
+        logger.warning(
+            "部分 MCP server 加载失败：%s",
+            ", ".join(load_result.failed_servers),
+        )
+    return graph, load_result
+
+
 def create_demo_runtime(
     *,
     documents: list[RagDocument] | None = None,
@@ -185,6 +236,7 @@ def create_demo_runtime(
     vector_document_count: int | None = None,
     rag_graph: Any | None = None,
     agent_graph: Any | None = None,
+    multi_agent_graph: Any = _UNSET,
     employee_store: EmployeeStore | None = None,
 ) -> DemoRuntime:
     """创建在线服务和 CLI 需要的运行时对象。"""
@@ -250,6 +302,13 @@ def create_demo_runtime(
             build_default_agent_tools(rag_graph, employee_store=employee_store)
         )
 
+    mcp_load_result: MCPLoadResult | None = None
+    if multi_agent_graph is _UNSET:
+        multi_agent_graph, mcp_load_result = _build_multi_agent_graph_safely(
+            rag_graph=rag_graph,
+            employee_store=employee_store,
+        )
+
     return DemoRuntime(
         documents,
         split_documents_list,
@@ -262,4 +321,6 @@ def create_demo_runtime(
         agent_graph=agent_graph,
         vector_document_count=vector_document_count,
         reranker=reranker,
+        multi_agent_graph=multi_agent_graph,
+        mcp_load_result=mcp_load_result,
     )

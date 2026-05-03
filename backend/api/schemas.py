@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 # 支持的执行模式：
 # - rag：固定 LangGraph 流水线（rewrite -> hybrid retrieve -> rerank -> generate）
 # - agent：模型自决 + 工具调用循环（ReAct）
-ChatMode = Literal["rag", "agent"]
+# - multi_agent：Supervisor + Policy + ExternalContext + Writer 多 Agent 编排
+ChatMode = Literal["rag", "agent", "multi_agent"]
 
 
 class ChatRequest(BaseModel):
@@ -52,6 +53,9 @@ class TraceStepModel(BaseModel):
     ok: bool = True
     latency_ms: int | None = None
     error: str | None = None
+    # multi_agent 模式下，标注这一步属于哪个 sub-agent（supervisor / policy /
+    # external_context / writer）。其它模式下保持为 None。
+    agent: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -64,10 +68,13 @@ class ChatResponse(BaseModel):
     session_id: str
     history_file: str
     sources: list[SourceItem]
-    # 统一的调用轨迹（RAG / Agent 两种模式格式一致）。
+    # 统一的调用轨迹（RAG / Agent / Multi-Agent 三种模式格式一致）。
     trace: list[TraceStepModel] = Field(default_factory=list)
     # 用于前端确认本轮实际走的是哪种模式。
     mode: ChatMode | None = None
+    # multi_agent 模式下被触发过的 sub-agent 顺序列表（去重，按出现顺序）。
+    # 其它模式下保持为空列表。
+    agents_invoked: list[str] = Field(default_factory=list)
 
 
 class HistoryResponse(BaseModel):

@@ -26,6 +26,8 @@ class TraceStep:
     - ``input_summary`` / ``output_summary``：人可读的简述（已截断）。
     - ``ok``：是否成功；失败时 ``error`` 给原因。
     - ``latency_ms``：可选，便于观察性能瓶颈。
+    - ``agent``：multi_agent 模式下产生这一步的 sub-agent 名（supervisor /
+      policy / external_context / writer）；其它模式下保持为 ``None``。
     """
 
     step: int
@@ -35,6 +37,7 @@ class TraceStep:
     ok: bool = True
     latency_ms: int | None = None
     error: str | None = None
+    agent: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -97,8 +100,17 @@ class TraceCollector:
     steps: list[TraceStep] = field(default_factory=list)
     _next_index: int = 1
 
-    def add_rag_entries(self, entries: list[dict[str, Any]] | None) -> None:
-        """RAG 模式：把节点新增的 tool_trace 列表追加到轨迹。"""
+    def add_rag_entries(
+        self,
+        entries: list[dict[str, Any]] | None,
+        *,
+        agent: str | None = None,
+    ) -> None:
+        """RAG 模式：把节点新增的 tool_trace 列表追加到轨迹。
+
+        ``agent`` 可选：multi_agent 调度的 PolicyAgent 子图也会推 RAG
+        风格的 tool_trace，此时把每条 step 标记为该 sub-agent。
+        """
         if not entries:
             return
         for entry in entries:
@@ -112,15 +124,22 @@ class TraceCollector:
                     name=name,
                     input_summary=input_summary,
                     output_summary=output_summary,
+                    agent=agent,
                 )
             )
             self._next_index += 1
 
-    def add_agent_messages(self, messages: list[Any] | None) -> None:
+    def add_agent_messages(
+        self,
+        messages: list[Any] | None,
+        *,
+        agent: str | None = None,
+    ) -> None:
         """Agent 模式：从 ToolNode/agent 节点产生的消息里抽工具调用与结果。
 
         - ``AIMessage.tool_calls``：模型本轮请求的工具调用 → 暂存
         - ``ToolMessage``：工具执行结果 → 与之前的 tool_call 配对成 step
+        - ``agent``：可选，标记这一组消息属于哪个 sub-agent（用于 multi_agent）。
         """
         if not messages:
             return
@@ -138,6 +157,7 @@ class TraceCollector:
                             name=name,
                             input_summary=_truncate(args),
                             output_summary=None,
+                            agent=agent,
                         )
                     )
                     self._pending_call_index_by_id[call.get("id", "")] = (
@@ -158,13 +178,15 @@ class TraceCollector:
                 output_summary = _truncate(payload if payload is not None else content)
 
                 if idx is not None and 0 <= idx < len(self.steps):
+                    prev = self.steps[idx]
                     self.steps[idx] = TraceStep(
-                        step=self.steps[idx].step,
-                        name=self.steps[idx].name,
-                        input_summary=self.steps[idx].input_summary,
+                        step=prev.step,
+                        name=prev.name,
+                        input_summary=prev.input_summary,
                         output_summary=output_summary,
                         ok=ok,
                         error=error,
+                        agent=prev.agent or agent,
                     )
                 else:
                     name = getattr(msg, "name", "") or "tool"
@@ -175,9 +197,36 @@ class TraceCollector:
                             output_summary=output_summary,
                             ok=ok,
                             error=error,
+                            agent=agent,
                         )
                     )
                     self._next_index += 1
+
+    def add_node_step(
+        self,
+        name: str,
+        *,
+        agent: str | None = None,
+        input_summary: str | None = None,
+        output_summary: str | None = None,
+    ) -> None:
+        """multi_agent 模式：直接登记一条节点级 step（非工具调用）。
+
+        例如 supervisor 的决策、writer 的最终生成。这些不是 ToolMessage 也
+        不是 RAG 节点的 tool_trace，单独走这个入口。
+        """
+        if not name:
+            return
+        self.steps.append(
+            TraceStep(
+                step=self._next_index,
+                name=name,
+                input_summary=input_summary,
+                output_summary=output_summary,
+                agent=agent,
+            )
+        )
+        self._next_index += 1
 
     def to_list(self) -> list[dict[str, Any]]:
         return [step.to_dict() for step in self.steps]

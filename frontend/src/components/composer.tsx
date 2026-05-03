@@ -9,6 +9,11 @@ import type { ChatMode } from "@/types/api";
 const MODE_OPTIONS: { id: ChatMode; label: string; hint: string }[] = [
   { id: "rag", label: "RAG", hint: "Fixed pipeline" },
   { id: "agent", label: "Agent", hint: "LLM picks tools" },
+  {
+    id: "multi_agent",
+    label: "Multi-Agent",
+    hint: "Supervisor routes to sub-agents",
+  },
 ];
 
 export function Composer() {

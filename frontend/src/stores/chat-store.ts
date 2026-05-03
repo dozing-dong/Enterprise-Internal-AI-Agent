@@ -42,7 +42,9 @@ function loadChatMode(): ChatMode {
   if (typeof window === "undefined") return "rag";
   try {
     const stored = window.localStorage.getItem(CHAT_MODE_KEY);
-    return stored === "agent" ? "agent" : "rag";
+    if (stored === "agent") return "agent";
+    if (stored === "multi_agent") return "multi_agent";
+    return "rag";
   } catch {
     return "rag";
   }
@@ -281,6 +283,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...msg,
             content: event.full_answer || msg.content,
             trace: event.trace ?? msg.trace,
+            agentsInvoked: event.agents_invoked ?? msg.agentsInvoked,
             isStreaming: false,
           }));
           set({ isStreaming: false });

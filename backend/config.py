@@ -99,3 +99,55 @@ EMPLOYEE_TABLE = os.getenv("EMPLOYEE_TABLE", "rag_employees")
 EMPLOYEE_LOOKUP_TOP_K = int(os.getenv("EMPLOYEE_LOOKUP_TOP_K", "5"))
 EMPLOYEE_RAG_MANDATORY = os.getenv("EMPLOYEE_RAG_MANDATORY", "true").lower() == "true"
 EMPLOYEE_SEED_ON_STARTUP = os.getenv("EMPLOYEE_SEED_ON_STARTUP", "true").lower() == "true"
+
+
+# ---------------------------------------------------------------------------
+# Multi-Agent + MCP 配置
+#
+# - ``MULTI_AGENT_ENABLED``：是否在 runtime 启动期装配多 Agent 图。任一
+#   关键依赖（如 langchain-mcp-adapters）缺失或 server 启动失败，会自动
+#   降级为 None，``mode=multi_agent`` 的请求会返回 503，rag/agent 不受影响。
+# - ``MCP_*_COMMAND`` / ``MCP_*_ARGS``：每个 MCP server 的 stdio 启动命令。
+#   按社区优先策略，weather 与 web_search 默认走开源 npm MCP server，需要
+#   本机安装 Node；business_calendar 走本项目自写的 Python MCP server。
+# - ``MCP_*_ENABLED``：单独控制某个 server 是否加入工具集；任何一个
+#   server 加载失败都不会阻塞其它 server。
+# ---------------------------------------------------------------------------
+
+MULTI_AGENT_ENABLED = os.getenv("MULTI_AGENT_ENABLED", "true").lower() == "true"
+
+# 由 supervisor / policy / external / writer 子 Agent 共享的最大 ReAct 步数。
+MULTI_AGENT_RECURSION_LIMIT = int(os.getenv("MULTI_AGENT_RECURSION_LIMIT", "12"))
+
+# Weather MCP server（默认社区开源 stdio server）。
+MCP_WEATHER_ENABLED = os.getenv("MCP_WEATHER_ENABLED", "true").lower() == "true"
+MCP_WEATHER_COMMAND = os.getenv("MCP_WEATHER_COMMAND", "npx")
+MCP_WEATHER_ARGS = os.getenv(
+    "MCP_WEATHER_ARGS",
+    "-y @h1deya/mcp-server-weather",
+)
+
+# Brave Search MCP server。需要 BRAVE_API_KEY 才能成功调用。
+MCP_BRAVE_SEARCH_ENABLED = (
+    os.getenv("MCP_BRAVE_SEARCH_ENABLED", "true").lower() == "true"
+)
+MCP_BRAVE_SEARCH_COMMAND = os.getenv("MCP_BRAVE_SEARCH_COMMAND", "npx")
+MCP_BRAVE_SEARCH_ARGS = os.getenv(
+    "MCP_BRAVE_SEARCH_ARGS",
+    "-y @modelcontextprotocol/server-brave-search",
+)
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
+
+# Business Calendar MCP server（本项目自写，基于 holidays 包）。
+MCP_BUSINESS_CALENDAR_ENABLED = (
+    os.getenv("MCP_BUSINESS_CALENDAR_ENABLED", "true").lower() == "true"
+)
+MCP_BUSINESS_CALENDAR_COMMAND = os.getenv("MCP_BUSINESS_CALENDAR_COMMAND", "python")
+MCP_BUSINESS_CALENDAR_ARGS = os.getenv(
+    "MCP_BUSINESS_CALENDAR_ARGS",
+    "-m backend.mcp_servers.business_calendar",
+)
+# 业务日历默认地区（与示例 query "下周去奥克兰" 对齐）。
+BUSINESS_CALENDAR_DEFAULT_COUNTRY = os.getenv(
+    "BUSINESS_CALENDAR_DEFAULT_COUNTRY", "NZ"
+)

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any, NamedTuple
 
@@ -25,10 +26,22 @@ from backend.api.schemas import (
     ChatStreamRequest,
     SourceItem,
 )
+from backend.multi_agent import (
+    AGENT_NAME_EXTERNAL,
+    AGENT_NAME_POLICY,
+    AGENT_NAME_SUPERVISOR,
+    AGENT_NAME_WRITER,
+    WRITER_TAG,
+    build_initial_multi_agent_state,
+)
 from backend.orchestrator.trace import TraceCollector
 from backend.rag.title import generate_session_title
 from backend.runtime import DemoRuntime
-from backend.storage.history import build_history_path, read_session_history
+from backend.storage.history import (
+    append_session_messages,
+    build_history_path,
+    read_session_history,
+)
 from backend.storage.sessions import (
     create_session_if_missing,
     rename_session,
@@ -39,6 +52,15 @@ from backend.storage.sessions import (
 # RAG 节点中 "用户可见" 的最终生成节点名。orchestrator 只把该节点的
 # token 转给前端，避免 Agent 调 RAG 工具时把 RAG 内部生成也下发。
 _RAG_FINAL_NODE_NAME = "generate_answer"
+
+# multi_agent 拓扑里：父图节点名 → 它属于哪个 sub-agent，便于把节点
+# 内部产生的 messages / tool_trace 标记成对应的 trace.agent 字段。
+_MULTI_AGENT_NODE_TO_AGENT: dict[str, str] = {
+    "supervisor": AGENT_NAME_SUPERVISOR,
+    "policy": AGENT_NAME_POLICY,
+    "external": AGENT_NAME_EXTERNAL,
+    "writer": AGENT_NAME_WRITER,
+}
 
 
 class OrchestratorStreamEvent(NamedTuple):
@@ -68,6 +90,12 @@ class ChatOrchestrator:
                 session_record_title=session_record_title,
                 is_first_turn=is_first_turn,
             )
+        elif request.mode == "multi_agent":
+            yield from self._stream_multi_agent(
+                request,
+                session_record_title=session_record_title,
+                is_first_turn=is_first_turn,
+            )
         else:
             yield from self._stream_rag(
                 request,
@@ -93,6 +121,7 @@ class ChatOrchestrator:
         sources: list[dict] = []
         retrieval_question = request.question
         trace: list[dict] = []
+        agents_invoked: list[str] = []
         title = session_record.title
         error: str | None = None
 
@@ -110,6 +139,7 @@ class ChatOrchestrator:
                 )
             elif event.type == "done":
                 trace = event.data.get("trace", []) or []
+                agents_invoked = event.data.get("agents_invoked", []) or []
                 title = event.data.get("title", title)
                 full_answer = event.data.get("full_answer", "")
                 if full_answer and not token_parts:
@@ -136,6 +166,7 @@ class ChatOrchestrator:
             sources=[SourceItem(**s) for s in sources],
             trace=trace,
             mode=request.mode,
+            agents_invoked=agents_invoked,
         )
 
     # ---- RAG mode --------------------------------------------------------
@@ -292,8 +323,6 @@ class ChatOrchestrator:
         full_answer = "".join(token_parts).strip()
 
         if full_answer:
-            from backend.storage.history import append_session_messages
-
             append_session_messages(
                 request.session_id,
                 [
@@ -324,6 +353,123 @@ class ChatOrchestrator:
                 "retrieval_question": retrieval_question,
                 "trace": collector.to_list(),
                 "mode": "agent",
+            },
+        )
+
+    # ---- Multi-Agent mode ------------------------------------------------
+
+    def _stream_multi_agent(
+        self,
+        request: ChatStreamRequest,
+        *,
+        session_record_title: str,
+        is_first_turn: bool,
+    ) -> Iterator[OrchestratorStreamEvent]:
+        graph = self._runtime.multi_agent_graph
+        if graph is None:
+            yield OrchestratorStreamEvent(
+                "error", {"detail": "Multi-Agent graph 未初始化。"}
+            )
+            return
+
+        collector = TraceCollector()
+        token_parts: list[str] = []
+        sources: list[dict] = []
+        agents_invoked: list[str] = []
+        last_sources_signature: int | None = None
+        # Writer 通过 state.final_answer 写回最终答复；当 messages 流没产生
+        # 任何 chunk（例如 fake model 测试 / 模型未真正流式）时，用这个
+        # fallback 作为 full_answer。
+        final_answer_from_state: str = ""
+
+        history = read_session_history(request.session_id)
+        initial_state = build_initial_multi_agent_state(
+            question=request.question,
+            session_id=request.session_id,
+            history=history,
+        )
+
+        try:
+            stream_iter = graph.stream(
+                initial_state,
+                stream_mode=["messages", "updates"],
+            )
+            for stream_mode, payload in stream_iter:
+                if stream_mode == "messages":
+                    text = _extract_user_visible_text(
+                        payload,
+                        allowed_tag=WRITER_TAG,
+                    )
+                    if text:
+                        token_parts.append(text)
+                        yield OrchestratorStreamEvent("token", {"text": text})
+                elif stream_mode == "updates":
+                    (
+                        new_sources,
+                        new_invoked,
+                        new_final_answer,
+                    ) = _consume_multi_agent_update(payload, collector)
+                    if new_sources is not None:
+                        sources = new_sources
+                    if new_invoked:
+                        for name in new_invoked:
+                            if name and name not in agents_invoked:
+                                agents_invoked.append(name)
+                    if new_final_answer:
+                        final_answer_from_state = new_final_answer
+                    if (
+                        new_sources is not None
+                        and id(sources) != last_sources_signature
+                    ):
+                        last_sources_signature = id(sources)
+                        yield OrchestratorStreamEvent(
+                            "sources",
+                            {
+                                "sources": sources,
+                                "retrieval_question": request.question,
+                                "original_question": request.question,
+                            },
+                        )
+        except Exception as exc:  # noqa: BLE001
+            yield OrchestratorStreamEvent("error", {"detail": str(exc)})
+            return
+
+        full_answer = "".join(token_parts).strip()
+        if not full_answer and final_answer_from_state:
+            full_answer = final_answer_from_state.strip()
+
+        if full_answer:
+            append_session_messages(
+                request.session_id,
+                [
+                    {"role": "user", "content": request.question},
+                    {"role": "assistant", "content": full_answer},
+                ],
+            )
+
+        if not full_answer:
+            full_answer = "No answer generated."
+
+        touch_session(request.session_id)
+
+        title = self._maybe_retitle(
+            request,
+            session_record_title=session_record_title,
+            is_first_turn=is_first_turn,
+            full_answer=full_answer,
+        )
+
+        yield OrchestratorStreamEvent(
+            "done",
+            {
+                "session_id": request.session_id,
+                "title": title,
+                "full_answer": full_answer,
+                "original_question": request.question,
+                "retrieval_question": request.question,
+                "trace": collector.to_list(),
+                "mode": "multi_agent",
+                "agents_invoked": agents_invoked,
             },
         )
 
@@ -446,3 +592,174 @@ def _consume_agent_update(
         ):
             new_rq = update["retrieval_question"]
     return new_sources, new_rq
+
+
+def _consume_multi_agent_update(
+    payload: Any,
+    collector: TraceCollector,
+) -> tuple[list[dict] | None, list[str], str | None]:
+    """Multi-Agent ``updates`` 流：
+
+    - 把每个 sub-agent 节点的 ``agents_invoked`` / ``sources`` 提取出来；
+    - 给 trace collector 推一条 node 级 step（带 ``agent`` 标记）；
+    - 把 writer 节点写回的 ``final_answer`` 抽出，作为 token 流为空时的兜底。
+    - 不提取 ``retrieval_question``：multi_agent 不暴露 RAG 改写后的 query。
+    """
+    if not isinstance(payload, dict):
+        return None, [], None
+
+    new_sources: list[dict] | None = None
+    new_invoked: list[str] = []
+    new_final_answer: str | None = None
+
+    for node_name, update in payload.items():
+        if not isinstance(update, dict):
+            continue
+
+        sub_agent = _MULTI_AGENT_NODE_TO_AGENT.get(node_name)
+
+        invoked = update.get("agents_invoked")
+        if isinstance(invoked, list):
+            for name in invoked:
+                if isinstance(name, str) and name:
+                    new_invoked.append(name)
+
+        if "sources" in update:
+            sources_value = update["sources"]
+            if isinstance(sources_value, list) and sources_value:
+                new_sources = list(sources_value)
+
+        if (
+            "final_answer" in update
+            and isinstance(update["final_answer"], str)
+            and update["final_answer"].strip()
+        ):
+            new_final_answer = update["final_answer"]
+
+        # 把 sub-agent 内部 ReAct 的 tool 调用展开成 trace step，每条带
+        # 上 ``agent`` 标记，方便前端按 sub-agent 维度展示。子图本身在父
+        # 图 updates 里只暴露 policy_result / external_result，不会暴露
+        # inner messages 列表，所以这里从 result.tool_calls 派生。
+        for inner_calls in _iter_inner_tool_calls(update):
+            _record_tool_calls_to_trace(collector, inner_calls, agent=sub_agent)
+
+        summary = _summarize_multi_agent_update(node_name, update)
+        if sub_agent is not None and summary is not None:
+            collector.add_node_step(
+                name=node_name,
+                agent=sub_agent,
+                output_summary=summary,
+            )
+
+    return new_sources, new_invoked, new_final_answer
+
+
+def _iter_inner_tool_calls(update: dict) -> Iterator[list[dict]]:
+    """从父图节点 update 里抽出 sub-agent 自报的 tool_calls 列表。
+
+    ``policy_result.tool_calls`` 与 ``external_result.tool_calls`` 都用同一
+    种 dict 形态：``{name, args, id, ok, result, error?}``。
+    """
+    for key in ("policy_result", "external_result"):
+        result = update.get(key)
+        if not isinstance(result, dict):
+            continue
+        calls = result.get("tool_calls")
+        if isinstance(calls, list) and calls:
+            yield calls
+
+
+def _record_tool_calls_to_trace(
+    collector: TraceCollector,
+    calls: list[dict],
+    *,
+    agent: str | None,
+) -> None:
+    """把 sub-agent 暴露的 tool_calls 列表挨个登记成 trace step。"""
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get("name") or "")
+        if not name:
+            continue
+        args = call.get("args") or {}
+        ok = bool(call.get("ok", True))
+        error = call.get("error") if not ok else None
+        result = call.get("result")
+        output_summary: str | None
+        if result is None:
+            output_summary = None
+        else:
+            try:
+                output_summary = json.dumps(result, ensure_ascii=False)
+            except (TypeError, ValueError):
+                output_summary = str(result)
+            if output_summary and len(output_summary) > 160:
+                output_summary = output_summary[:159].rstrip() + "…"
+
+        try:
+            input_summary: str | None = (
+                json.dumps(args, ensure_ascii=False) if args else None
+            )
+        except (TypeError, ValueError):
+            input_summary = str(args) if args else None
+        if input_summary and len(input_summary) > 160:
+            input_summary = input_summary[:159].rstrip() + "…"
+
+        # 直接走低阶 add_node_step 简化路径：name=tool 名，agent=归属 sub-agent。
+        collector.add_node_step(
+            name=name,
+            agent=agent,
+            input_summary=input_summary,
+            output_summary=output_summary,
+        )
+        # ok=False 的工具调用：把最后一个 step 标记为失败。
+        if not ok and collector.steps:
+            last = collector.steps[-1]
+            last.ok = False
+            last.error = str(error) if error else "tool reported failure"
+
+
+def _summarize_multi_agent_update(node_name: str, update: dict) -> str | None:
+    """为 multi_agent 的每个父图节点产出一条简短输出摘要。"""
+    if node_name == "supervisor":
+        plan = update.get("plan")
+        if plan is None:
+            return None
+        try:
+            return (
+                f"use_policy={getattr(plan, 'use_policy', False)},"
+                f" use_external={getattr(plan, 'use_external', False)},"
+                f" locations={getattr(plan, 'locations', [])}"
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
+    if node_name == "policy":
+        result = update.get("policy_result") or {}
+        if not isinstance(result, dict):
+            return None
+        if not result.get("ok", True):
+            return f"failed: {result.get('error', 'unknown')}"
+        answer = (result.get("answer") or "").strip()
+        sources_count = len(result.get("sources") or [])
+        return (
+            f"summary_chars={len(answer)}, sources={sources_count}"
+            if answer or sources_count
+            else "no policy summary"
+        )
+
+    if node_name == "external":
+        result = update.get("external_result") or {}
+        if not isinstance(result, dict):
+            return None
+        if not result.get("ok", True):
+            return f"failed: {result.get('error', 'unknown')}"
+        tools_used = result.get("tools_used") or []
+        return f"tools_used={list(tools_used)}"
+
+    if node_name == "writer":
+        answer = update.get("final_answer") or ""
+        return f"answer_chars={len(answer)}"
+
+    return None

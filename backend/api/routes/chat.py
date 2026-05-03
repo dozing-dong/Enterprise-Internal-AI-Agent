@@ -42,6 +42,11 @@ def _ensure_graph(runtime: DemoRuntime, mode: str) -> None:
         raise RagException("Agent graph 未初始化。", status_code=503)
     if mode == "rag" and runtime.rag_graph is None:
         raise RagException("RAG graph 未初始化。", status_code=503)
+    if mode == "multi_agent" and runtime.multi_agent_graph is None:
+        raise RagException(
+            "Multi-Agent graph 未初始化（可能 langchain-mcp-adapters 未安装或 MCP server 启动失败）。",
+            status_code=503,
+        )
 
 
 @router.post("/chat", response_model=ChatResponse)

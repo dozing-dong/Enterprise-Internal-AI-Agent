@@ -164,6 +164,11 @@ export function TracePopover({ trace }: TracePopoverProps) {
                       <span className="font-medium text-foreground/90">
                         {step.name}
                       </span>
+                      {step.agent ? (
+                        <span className="rounded-full bg-violet-200 px-1.5 py-0.5 text-[10px] font-medium text-black">
+                          {step.agent}
+                        </span>
+                      ) : null}
                       {latency ? (
                         <span className="ml-auto text-[10px] text-muted-foreground">
                           {latency}
