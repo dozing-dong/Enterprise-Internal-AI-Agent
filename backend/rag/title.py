@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
-from backend.rag.models import chat_completion
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from backend.llm import get_chat_model
 
 
 TITLE_SYSTEM_PROMPT = (
@@ -45,6 +47,16 @@ def _fallback_title(question: str) -> str:
     return snippet or "New Chat"
 
 
+def _coerce_to_text(content) -> str:
+    if isinstance(content, list):
+        parts = [
+            str(block.get("text", "")) if isinstance(block, dict) else str(block)
+            for block in content
+        ]
+        return "".join(parts)
+    return str(content or "")
+
+
 def generate_session_title(question: str, answer: str) -> str:
     """根据首轮对话生成一个简短标题。
 
@@ -57,24 +69,17 @@ def generate_session_title(question: str, answer: str) -> str:
     if len(assistant_excerpt) > 400:
         assistant_excerpt = assistant_excerpt[:400].rstrip() + "…"
 
-    messages = [
-        {
-            "role": "user",
-            "content": (
-                "Conversation to summarize:\n\n"
-                f"User: {user_excerpt}\n\n"
-                f"Assistant: {assistant_excerpt}\n\n"
-                "Return a 3-6 word English title for this conversation."
-            ),
-        }
-    ]
+    user_message = HumanMessage(
+        "Conversation to summarize:\n\n"
+        f"User: {user_excerpt}\n\n"
+        f"Assistant: {assistant_excerpt}\n\n"
+        "Return a 3-6 word English title for this conversation."
+    )
 
     try:
-        raw = chat_completion(
-            messages,
-            system_prompt=TITLE_SYSTEM_PROMPT,
-            temperature=0.2,
-        )
+        chat_model = get_chat_model(temperature=0.2)
+        ai_msg = chat_model.invoke([SystemMessage(TITLE_SYSTEM_PROMPT), user_message])
+        raw = _coerce_to_text(ai_msg.content)
     except Exception:
         return _fallback_title(question)
 

@@ -1,6 +1,8 @@
 from collections.abc import Callable
 
-from backend.rag.models import chat_completion
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from backend.llm import get_chat_model
 
 
 REWRITE_SYSTEM_PROMPT = (
@@ -14,25 +16,33 @@ REWRITE_SYSTEM_PROMPT = (
 )
 
 
-def build_rewrite_messages(question: str) -> list[dict[str, str]]:
-    """构建改写阶段要发送的消息。"""
-    return [
-        {
-            "role": "user",
-            "content": (
-                f"Original question: {question}\n\n"
-                "Please output a single rewritten query that is better suited for retrieval."
-            ),
-        }
-    ]
+def _build_user_text(question: str) -> str:
+    return (
+        f"Original question: {question}\n\n"
+        "Please output a single rewritten query that is better suited for retrieval."
+    )
 
 
 def build_query_rewrite_chain() -> Callable[[str], str]:
     """构建一个最小查询改写函数。"""
 
+    chat_model = get_chat_model(temperature=0.0)
+
     def rewrite_question(question: str) -> str:
-        messages = build_rewrite_messages(question)
-        return chat_completion(messages, system_prompt=REWRITE_SYSTEM_PROMPT)
+        ai_msg = chat_model.invoke(
+            [
+                SystemMessage(REWRITE_SYSTEM_PROMPT),
+                HumanMessage(_build_user_text(question)),
+            ]
+        )
+        content = ai_msg.content
+        if isinstance(content, list):
+            text_parts = [
+                str(block.get("text", "")) if isinstance(block, dict) else str(block)
+                for block in content
+            ]
+            content = "".join(text_parts)
+        return str(content or "").strip() or "没有生成可用回答。"
 
     return rewrite_question
 

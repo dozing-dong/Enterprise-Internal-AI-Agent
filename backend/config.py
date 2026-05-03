@@ -13,7 +13,6 @@ DOTENV_LOCAL_PATH = PROJECT_ROOT / ".env.local"
 load_dotenv(DOTENV_PATH, override=False)
 load_dotenv(DOTENV_LOCAL_PATH, override=False)
 
-EXECUTION_MODE = os.getenv("EXECUTION_MODE", "langgraph")
 MODEL_PROVIDER = "bedrock"
 VECTOR_BACKEND = "pgvector"
 

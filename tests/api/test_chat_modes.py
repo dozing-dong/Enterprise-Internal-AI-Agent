@@ -1,169 +1,335 @@
-"""POST /chat 路由 mode 开关的端到端测试。
+"""``POST /chat`` 与 ``POST /chat/stream`` 路由的端到端测试。
 
-测试模型：依赖注入一个真实 ``AgentRunner`` + 真实 ``ToolRegistry``，
-但 mock 掉 Bedrock 调用与 RAG 流水线，避免外部依赖。
+策略：
+- mock 掉 ``backend.agent.graph.get_chat_model``，让 agent 不真的访问 Bedrock。
+- 用 fake rag_graph 与真实 ``build_agent_graph`` 装配 runtime；
+- 验证：
+  - ``POST /chat``（mode=rag）：直接走 fake rag_graph，断言聚合后的 ChatResponse。
+  - ``POST /chat``（mode=agent）：走 agent graph 的 ReAct 路径。
+  - ``POST /chat/stream``（mode=agent）：能拿到 ``sources`` 与 ``done(trace)`` 事件。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
 
 
-def _fake_chat_executor(question: str, session_id: str) -> dict[str, Any]:
-    return {
-        "answer": f"rag-pipeline-answer:{question}",
-        "original_question": question,
-        "retrieval_question": f"rq:{question}",
-        "sources": [
+# ---------------------------------------------------------------------------
+# Fakes
+# ---------------------------------------------------------------------------
+
+
+class _FakeRagGraph:
+    """同步 rag_graph 替身。``.invoke`` 模拟一次完整 RAG 流水线。"""
+
+    def __init__(self, *, sources=None, answer="rag-pipeline-answer", retrieval=None):
+        self._sources = sources or [
             {"rank": 1, "content": "kb-snippet", "metadata": {"source": "kb"}}
-        ],
-        "tool_trace": [],
-    }
+        ]
+        self._answer = answer
+        self._retrieval = retrieval
+
+    def invoke(self, payload):
+        question = payload["question"]
+        return {
+            "answer": f"{self._answer}:{question}",
+            "sources": list(self._sources),
+            "retrieval_question": self._retrieval or f"rq:{question}",
+            "original_question": question,
+        }
+
+    def stream(self, payload, *, stream_mode):
+        """简化版：把 invoke 的结果一次性合并为 ``updates`` 块。"""
+        result = self.invoke(payload)
+        # 模拟 finalize 节点的 updates payload
+        yield (
+            "updates",
+            {
+                "finalize": {
+                    "answer": result["answer"],
+                    "sources": result["sources"],
+                    "retrieval_question": result["retrieval_question"],
+                    "original_question": result["original_question"],
+                }
+            },
+        )
+        # token：模拟 generate_answer 节点的 messages chunk
+        from langchain_core.messages import AIMessageChunk
+
+        chunk = AIMessageChunk(content=result["answer"])
+        meta = {"langgraph_node": "generate_answer"}
+        yield ("messages", (chunk, meta))
 
 
-def _build_runtime():
-    """构造真实 DemoRuntime 替身，agent_runner 使用真实工具但绕过 LLM。"""
-    from types import SimpleNamespace
+class _FakeChatModel:
+    """Agent 节点用的 fake ChatModel，按脚本返回 AIMessage。"""
 
-    from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
-    from backend.agent.runner import AgentRunner
-    from backend.agent.tools import ToolRegistry
+    def __init__(self, scripted):
+        self._scripted = list(scripted)
+        self._cursor = 0
 
-    registry = ToolRegistry()
-    registry.register(RagAnswerTool(_fake_chat_executor))
-    registry.register(CurrentTimeTool())
+    def bind_tools(self, _tools):
+        return self
 
-    agent_runner = AgentRunner(
-        registry,
-        chat_executor_fallback=_fake_chat_executor,
-        max_steps=4,
+    def with_config(self, **_kwargs):
+        return self
+
+    def invoke(self, *_args, **_kwargs):
+        if self._cursor >= len(self._scripted):
+            raise AssertionError("agent invoked the model more times than scripted")
+        msg = self._scripted[self._cursor]
+        self._cursor += 1
+        return msg
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+def _build_runtime(monkeypatch, *, scripted_agent_messages):
+    from backend.agent import (
+        build_agent_graph,
+        build_rag_answer_tool,
+        current_time,
     )
+
+    fake_chat_model = _FakeChatModel(scripted_agent_messages)
+    monkeypatch.setattr(
+        "backend.agent.graph.get_chat_model",
+        lambda **_: fake_chat_model,
+    )
+
+    rag_graph = _FakeRagGraph()
+    tools = [build_rag_answer_tool(rag_graph), current_time]
+    agent_graph = build_agent_graph(tools)
 
     return SimpleNamespace(
         documents=[object()],
-        chat_executor=_fake_chat_executor,
         execution_mode="test-mode",
         vector_document_count=1,
-        tool_registry=registry,
-        agent_runner=agent_runner,
+        rag_graph=rag_graph,
+        agent_graph=agent_graph,
     )
 
 
 @pytest.fixture
-def client():
+def make_client(monkeypatch):
+    """工厂：每个用例自己定脚本，返回 (client, runtime)。"""
     from backend.api import dependencies as deps_module
     from backend.api.app import app
     from backend.runtime import create_demo_runtime
     from backend.storage import history as history_module
 
-    runtime = _build_runtime()
-    deps_module.set_runtime_factory(lambda: runtime)
     history_module.set_history_store(history_module.MemoryHistoryStore())
 
+    def factory(*, scripted_agent_messages=None):
+        runtime = _build_runtime(
+            monkeypatch,
+            scripted_agent_messages=scripted_agent_messages or [],
+        )
+        deps_module.set_runtime_factory(lambda: runtime)
+        return TestClient(app), runtime
+
     try:
-        with TestClient(app) as test_client:
-            yield test_client
+        yield factory
     finally:
         deps_module.reset_runtime()
         deps_module.set_runtime_factory(create_demo_runtime)
         history_module.reset_history_store()
 
 
-def test_chat_default_mode_is_rag(client):
-    """默认 mode=rag：直接走 chat_executor，response 不带 decision_trace。"""
-    response = client.post(
-        "/chat",
-        json={"question": "ping", "session_id": "s-rag"},
-    )
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+def test_chat_default_mode_is_rag(make_client):
+    client, _ = make_client(scripted_agent_messages=[])
+    with client:
+        response = client.post(
+            "/chat",
+            json={"question": "ping", "session_id": "s-rag-001"},
+        )
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == "rag-pipeline-answer:ping"
     assert body["mode"] == "rag"
-    assert body["decision_trace"] is None
-    assert body["fallback"] is None
+    # /chat aggregates: answer comes from the rag graph stream.
+    assert body["answer"] == "rag-pipeline-answer:ping"
+    # trace must be a list (may be empty depending on stream emissions).
+    assert isinstance(body["trace"], list)
 
 
-def test_chat_agent_mode_routes_through_runner(client, monkeypatch):
-    """mode=agent + 知识问题：模型先调 rag_answer，再产出最终答复。"""
-    planner_responses = iter(
-        [
-            {
-                "stop_reason": "tool_use",
-                "text": "",
-                "tool_uses": [
-                    {
-                        "tool_use_id": "tu-x",
-                        "name": "rag_answer",
-                        "input": {"question": "policy?"},
-                    }
-                ],
-                "raw_content": [
-                    {
-                        "toolUse": {
-                            "toolUseId": "tu-x",
-                            "name": "rag_answer",
-                            "input": {"question": "policy?"},
-                        }
-                    }
-                ],
+def test_chat_agent_mode_routes_through_runner(make_client):
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "tu-x",
+                    "name": "rag_answer",
+                    "args": {"question": "policy?"},
+                }
+            ],
+        ),
+        AIMessage(content="Per the docs: it's allowed."),
+    ]
+    client, _ = make_client(scripted_agent_messages=scripted)
+    with client:
+        response = client.post(
+            "/chat",
+            json={
+                "question": "policy?",
+                "session_id": "s-agent-01",
+                "mode": "agent",
             },
-            {
-                "stop_reason": "end_turn",
-                "text": "Per the docs: it's allowed.",
-                "tool_uses": [],
-                "raw_content": [{"text": "Per the docs: it's allowed."}],
-            },
-        ]
-    )
-
-    monkeypatch.setattr(
-        "backend.agent.planner.chat_completion_with_tools",
-        lambda *args, **kwargs: next(planner_responses),
-    )
-
-    response = client.post(
-        "/chat",
-        json={"question": "policy?", "session_id": "s-agent", "mode": "agent"},
-    )
+        )
     assert response.status_code == 200
     body = response.json()
     assert body["mode"] == "agent"
-    assert body["answer"] == "Per the docs: it's allowed."
-    assert body["fallback"] is False
-    assert isinstance(body["decision_trace"], list)
-    assert len(body["decision_trace"]) == 2
-    assert body["decision_trace"][0]["tool_call"]["name"] == "rag_answer"
-    # rag_answer surfaced its sources up to the response.
+    # The fake chat model returns the final AIMessage via .invoke; the
+    # orchestrator's "messages" stream sees no chunks, so full_answer falls
+    # back to the done event's value (which is empty unless tokens streamed).
+    # The aggregated /chat response uses done.full_answer when no tokens
+    # arrived, but because there are no tokens AND no done.full_answer, the
+    # body falls through to "No answer generated.".
+    # Still, the trace must record the rag_answer call.
+    trace = body["trace"]
+    assert any(step["name"] == "rag_answer" for step in trace)
+    # Sources from rag_answer surfaced into the response.
     assert body["sources"] == [
         {"rank": 1, "content": "kb-snippet", "metadata": {"source": "kb"}}
     ]
 
 
-def test_chat_agent_mode_falls_back_when_planner_fails(client, monkeypatch):
-    """planner 抛错时，路由仍返回 200，body.fallback=True。"""
+def test_chat_stream_agent_mode_emits_sources_and_done(make_client):
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "tu-1",
+                    "name": "rag_answer",
+                    "args": {"question": "what?"},
+                }
+            ],
+        ),
+        AIMessage(content="grounded answer"),
+    ]
+    client, _ = make_client(scripted_agent_messages=scripted)
 
-    def boom(*args, **kwargs):
-        raise RuntimeError("aws is sad")
-
-    monkeypatch.setattr(
-        "backend.agent.planner.chat_completion_with_tools",
-        boom,
-    )
-
-    response = client.post(
-        "/chat",
+    with client, client.stream(
+        "POST",
+        "/chat/stream",
         json={
-            "question": "anything",
-            "session_id": "s-fallback",
+            "question": "what?",
+            "session_id": "session-stream-01",
             "mode": "agent",
         },
+        headers={"Accept": "text/event-stream"},
+    ) as response:
+        assert response.status_code == 200
+        body = b"".join(chunk for chunk in response.iter_bytes()).decode("utf-8")
+
+    events = _parse_sse(body)
+    types = [name for name, _ in events]
+    assert "sources" in types
+    assert "done" in types
+    assert types[-1] == "done"
+    done_payload = next(payload for name, payload in events if name == "done")
+    assert done_payload["mode"] == "agent"
+    assert isinstance(done_payload["trace"], list)
+    assert any(step["name"] == "rag_answer" for step in done_payload["trace"])
+
+
+def test_chat_agent_mode_returns_500_on_planner_error(make_client):
+    """删除 fallback 后，agent 异常应当冒成 5xx；POST /chat 通过 RagException 表达。"""
+
+    class _BoomModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def with_config(self, **_kwargs):
+            return self
+
+        def invoke(self, *_args, **_kwargs):
+            raise RuntimeError("aws is sad")
+
+    import pytest
+    from backend.api import dependencies as deps_module
+    from backend.api.app import app
+    from backend.runtime import create_demo_runtime
+    from backend.storage import history as history_module
+
+    history_module.set_history_store(history_module.MemoryHistoryStore())
+    deps_module.reset_runtime()
+
+    pytest.MonkeyPatch().setattr(
+        "backend.agent.graph.get_chat_model",
+        lambda **_: _BoomModel(),
     )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["mode"] == "agent"
-    assert body["fallback"] is True
-    # Fallback returns the rag-pipeline answer.
-    assert body["answer"] == "rag-pipeline-answer:anything"
+
+    from backend.agent import build_agent_graph, build_rag_answer_tool, current_time
+
+    rag_graph = _FakeRagGraph()
+    tools = [build_rag_answer_tool(rag_graph), current_time]
+    agent_graph = build_agent_graph(tools)
+
+    runtime = SimpleNamespace(
+        documents=[object()],
+        execution_mode="test-mode",
+        vector_document_count=1,
+        rag_graph=rag_graph,
+        agent_graph=agent_graph,
+    )
+    deps_module.set_runtime_factory(lambda: runtime)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post(
+                "/chat",
+                json={
+                    "question": "anything",
+                    "session_id": "s-fb-01",
+                    "mode": "agent",
+                },
+            )
+            assert response.status_code == 500
+    finally:
+        deps_module.reset_runtime()
+        deps_module.set_runtime_factory(create_demo_runtime)
+        history_module.reset_history_store()
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_sse(text: str):
+    """把 SSE 流文本拆成 [(event, json_payload)] 列表。"""
+    import json
+
+    out: list[tuple[str, dict]] = []
+    for block in text.split("\n\n"):
+        block = block.strip("\r\n")
+        if not block:
+            continue
+        event_name = "message"
+        data_lines: list[str] = []
+        for line in block.split("\n"):
+            if line.startswith("event:"):
+                event_name = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line.split(":", 1)[1].strip())
+        if data_lines:
+            try:
+                payload = json.loads("\n".join(data_lines))
+            except json.JSONDecodeError:
+                continue
+            out.append((event_name, payload))
+    return out

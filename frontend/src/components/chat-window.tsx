@@ -3,7 +3,6 @@ import { Sparkles } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Composer } from "@/components/composer";
 import { MessageBubble } from "@/components/message-bubble";
-import { StageIndicator } from "@/components/stage-indicator";
 import { useChatStore } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 
@@ -24,8 +23,6 @@ function EmptyState() {
 
 export function ChatWindow() {
   const messages = useChatStore((s) => s.messages);
-  const stage = useChatStore((s) => s.stage);
-  const stageMessage = useChatStore((s) => s.stageMessage);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const isLoadingHistory = useChatStore((s) => s.isLoadingHistory);
   const error = useChatStore((s) => s.error);
@@ -69,7 +66,6 @@ export function ChatWindow() {
             {currentTitle}
           </h2>
         </div>
-        <StageIndicator stage={stage} message={stageMessage} />
       </header>
 
       <div

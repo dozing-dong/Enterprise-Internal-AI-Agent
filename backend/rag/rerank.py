@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from backend.config import BEDROCK_RERANK_MODEL_ID
-from backend.rag.models import bedrock_rerank
+from backend.llm import bedrock_rerank
 from backend.types import RagDocument
 
 

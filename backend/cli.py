@@ -80,6 +80,8 @@ def interactive_chat(runtime: DemoRuntime) -> None:
     print(f"历史定位：{history_path}")
     print("输入 quit 或 exit 退出，输入 /clear 清空当前会话历史。\n")
 
+    rag_graph = runtime.rag_graph
+
     while True:
         user_question = input("请输入问题：").strip()
 
@@ -97,12 +99,14 @@ def interactive_chat(runtime: DemoRuntime) -> None:
             continue
 
         try:
-            result = runtime.chat_executor(user_question, session_id)
+            result = rag_graph.invoke(
+                {"question": user_question, "session_id": session_id}
+            )
 
-            print(f"\n原问题：{result['original_question']}")
-            print(f"检索问题：{result['retrieval_question']}")
-            print(f"\n回答：\n{result['answer']}\n")
-            print_sources(result["sources"])
+            print(f"\n原问题：{result.get('original_question', user_question)}")
+            print(f"检索问题：{result.get('retrieval_question', user_question)}")
+            print(f"\n回答：\n{result.get('answer', '')}\n")
+            print_sources(result.get("sources", []))
             print("\n" + "-" * 80)
         except Exception as exc:
             print(f"\n发生错误：{exc}")

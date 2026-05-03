@@ -90,7 +90,7 @@ frontend/
         ├── composer.tsx
         ├── message-bubble.tsx
         ├── sources-popover.tsx
-        ├── stage-indicator.tsx
+        ├── trace-popover.tsx
         └── glass-panel.tsx
 ```
 

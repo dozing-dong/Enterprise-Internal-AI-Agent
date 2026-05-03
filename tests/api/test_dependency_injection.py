@@ -8,30 +8,56 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 
-def _build_fake_runtime() -> SimpleNamespace:
-    """构造一个无外部依赖的最小 DemoRuntime 替身。"""
+class _FakeRagGraph:
+    """同步 rag_graph 替身：``.invoke`` + ``.stream``。"""
 
-    def fake_chat(question: str, session_id: str) -> dict[str, Any]:
+    def invoke(self, payload):
+        question = payload["question"]
         return {
-            "answer": f"fake-answer:{question}:{session_id}",
-            "original_question": question,
-            "retrieval_question": question,
+            "answer": f"fake-answer:{question}:{payload.get('session_id', '')}",
             "sources": [
                 {"rank": 1, "content": "snippet", "metadata": {"source": "fake"}},
             ],
+            "retrieval_question": question,
+            "original_question": question,
         }
 
+    def stream(self, payload, *, stream_mode):
+        result = self.invoke(payload)
+        from langchain_core.messages import AIMessageChunk
+
+        # 一次性把 sources 与 retrieval_question 通过 updates 注入。
+        yield (
+            "updates",
+            {
+                "finalize": {
+                    "answer": result["answer"],
+                    "sources": result["sources"],
+                    "retrieval_question": result["retrieval_question"],
+                    "original_question": result["original_question"],
+                }
+            },
+        )
+        # 模拟最终生成节点的 token chunk。
+        chunk = AIMessageChunk(content=result["answer"])
+        meta = {"langgraph_node": "generate_answer"}
+        yield ("messages", (chunk, meta))
+
+
+def _build_fake_runtime() -> SimpleNamespace:
+    """构造一个无外部依赖的最小 DemoRuntime 替身。"""
+    rag_graph = _FakeRagGraph()
     return SimpleNamespace(
         documents=[object()],
-        chat_executor=fake_chat,
         execution_mode="fake-mode",
         vector_document_count=42,
+        rag_graph=rag_graph,
+        agent_graph=None,
     )
 
 
@@ -74,10 +100,10 @@ def test_health_returns_injected_counts(client):
 def test_chat_uses_injected_executor(client):
     response = client.post(
         "/chat",
-        json={"question": "ping", "session_id": "s1"},
+        json={"question": "ping", "session_id": "s1-test1"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == "fake-answer:ping:s1"
-    assert body["session_id"] == "s1"
+    assert body["answer"] == "fake-answer:ping:s1-test1"
+    assert body["session_id"] == "s1-test1"
     assert body["sources"][0]["metadata"]["source"] == "fake"

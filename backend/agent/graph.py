@@ -1,148 +1,113 @@
-"""LangGraph：非流式 Agent 计划 → 执行工具 → 再计划，直到最终答复或用尽步数。"""
+"""Agent LangGraph：标准 ReAct 循环（agent ⇄ tools），全流式。
+
+设计要点：
+- 节点 ``agent``：调用 ``ChatBedrockConverse.bind_tools(...)``。在
+  ``stream_mode=["messages","updates"]`` 下，``invoke`` 内部的流式 token
+  会自动以 ``AIMessageChunk`` 形式被 ``messages`` 流捕获。
+- 节点 ``tools``：``langgraph.prebuilt.ToolNode``，自动按
+  ``AIMessage.tool_calls`` 路由到对应的 ``@tool``，支持 ``Command`` 返回值
+  把 ``sources`` 等业务字段写回 state。
+- 工具执行结束自动回到 ``agent`` 节点；``tools_condition`` 在没有更多
+  ``tool_calls`` 时直接结束，由模型本轮的 AIMessage 作为最终答案。
+- agent 内部 LLM 调用用 ``with_config(tags=["agent_main"])`` 打 tag，
+  便于 orchestrator 在流式过滤中只转发 "用户可见" 的最终答复，避免
+  RAG-as-tool 子调用的内部生成被双重下发。
+"""
 
 from __future__ import annotations
 
-import operator
-from typing import Annotated, Any, TypedDict
+from collections.abc import Sequence
+from typing import Annotated, Any
 
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+from typing_extensions import TypedDict
 
-from backend.agent.planner import plan_step
-from backend.agent.schemas import AgentStep, ToolCall, ToolResult
-from backend.agent.steps import build_tool_result_message
-from backend.agent.tools import ToolRegistry
+from backend.agent.policy import AGENT_PLANNER_TEMPERATURE, AGENT_SYSTEM_PROMPT
+from backend.llm import get_chat_model
+
+
+AGENT_MAIN_TAG = "agent_main"
+
+
+def _merge_unique(left: list, right: list) -> list:
+    """LangGraph reducer：保留新值；空 list 时回退到旧值，避免覆盖。"""
+    if right:
+        return list(right)
+    return list(left or [])
+
+
+def _keep_latest(left: Any, right: Any) -> Any:
+    """LangGraph reducer：用新值覆盖旧值（None / 空字符串也允许覆盖）。"""
+    return right if right is not None else left
 
 
 class AgentState(TypedDict, total=False):
-    question: str
+    messages: Annotated[list[BaseMessage], add_messages]
     session_id: str
-    messages: list[dict[str, Any]]
-    decision_trace: Annotated[list[dict], operator.add]
-    sources: list[dict]
-    retrieval_question: str | None
-    step_index: int
-    last_response: dict[str, Any]
-    stop_reason: str
-    final_text: str
+    sources: Annotated[list[dict], _merge_unique]
+    retrieval_question: Annotated[str | None, _keep_latest]
+    original_question: str
 
 
 def build_agent_graph(
-    registry: ToolRegistry,
+    tools: Sequence,
     *,
-    system_prompt: str,
-    max_steps: int,
-) -> Any:
+    system_prompt: str = AGENT_SYSTEM_PROMPT,
+    temperature: float = AGENT_PLANNER_TEMPERATURE,
+):
+    """构建并编译 Agent ReAct LangGraph。
+
+    ``tools`` 必须是已经构造好的 LangChain Tool 列表（含 ``rag_answer`` 等）。
+    """
+    chat_model = (
+        get_chat_model(temperature=temperature)
+        .bind_tools(list(tools))
+        .with_config(tags=[AGENT_MAIN_TAG])
+    )
+
+    def agent_node(state: AgentState) -> dict:
+        messages = list(state.get("messages", []))
+        prompt = [SystemMessage(system_prompt), *messages]
+        ai_msg = chat_model.invoke(prompt)
+        return {"messages": [ai_msg]}
+
+    tool_node = ToolNode(list(tools))
+
     graph = StateGraph(AgentState)
-
-    def plan(state: AgentState) -> dict[str, Any]:
-        response = plan_step(
-            state["messages"],
-            registry=registry,
-            system_prompt=system_prompt,
-        )
-        new_index = state.get("step_index", 0) + 1
-        return {
-            "last_response": response,
-            "stop_reason": response.get("stop_reason", ""),
-            "step_index": new_index,
-        }
-
-    def execute_tool(state: AgentState) -> dict[str, Any]:
-        response = state["last_response"]
-        session_id = state["session_id"]
-        step_index = state["step_index"]
-        messages = state["messages"]
-        step_text = response.get("text", "")
-        tool_uses = response.get("tool_uses", [])
-        first_use = tool_uses[0]
-        call = ToolCall(
-            name=first_use["name"],
-            arguments=first_use.get("input") or {},
-            tool_use_id=first_use["tool_use_id"],
-        )
-        result: ToolResult = registry.execute(
-            call,
-            context={"session_id": session_id},
-        )
-
-        patch: dict[str, Any] = {
-            "decision_trace": [
-                AgentStep(
-                    index=step_index,
-                    thought=step_text or None,
-                    tool_call=call,
-                    tool_result=result,
-                ).to_dict()
-            ],
-            "messages": [
-                *messages,
-                {"role": "assistant", "content": response.get("raw_content", [])},
-                build_tool_result_message(result),
-            ],
-        }
-
-        if result.ok and call.name == "rag_answer":
-            new_sources = result.data.get("sources", []) or []
-            prev_sources = state.get("sources", []) or []
-            patch["sources"] = new_sources or prev_sources
-            merged_rq = result.data.get("retrieval_question") or state.get(
-                "retrieval_question"
-            )
-            if merged_rq is not None:
-                patch["retrieval_question"] = merged_rq
-
-        return patch
-
-    def finalize(state: AgentState) -> dict[str, Any]:
-        response = state.get("last_response", {})
-        step_index = state.get("step_index", 0)
-        stop_reason = response.get("stop_reason", "")
-        tool_uses = response.get("tool_uses", [])
-        exhausted = (
-            step_index >= max_steps
-            and stop_reason == "tool_use"
-            and bool(tool_uses)
-        )
-        if exhausted:
-            return {"final_text": ""}
-
-        final_text = response.get("text", "") or ""
-        return {
-            "final_text": final_text,
-            "decision_trace": [
-                AgentStep(
-                    index=step_index,
-                    final_answer=final_text,
-                ).to_dict()
-            ],
-        }
-
-    def route_after_plan(state: AgentState) -> str:
-        stop_reason = state.get("stop_reason", "")
-        tool_uses = state.get("last_response", {}).get("tool_uses", [])
-        if stop_reason == "tool_use" and tool_uses:
-            return "execute_tool"
-        return "finalize"
-
-    def route_after_execute(state: AgentState) -> str:
-        step_index = state.get("step_index", 0)
-        if step_index >= max_steps:
-            return "finalize"
-        return "plan"
-
-    graph.add_node("plan", plan)
-    graph.add_node("execute_tool", execute_tool)
-    graph.add_node("finalize", finalize)
-    graph.set_entry_point("plan")
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", tool_node)
+    graph.set_entry_point("agent")
     graph.add_conditional_edges(
-        "plan",
-        route_after_plan,
-        {"execute_tool": "execute_tool", "finalize": "finalize"},
+        "agent",
+        tools_condition,
+        {"tools": "tools", END: END},
     )
-    graph.add_conditional_edges(
-        "execute_tool",
-        route_after_execute,
-        {"plan": "plan", "finalize": "finalize"},
-    )
-    graph.add_edge("finalize", END)
+    graph.add_edge("tools", "agent")
     return graph.compile()
+
+
+def build_initial_messages(
+    history: Sequence[dict],
+    question: str,
+) -> list[BaseMessage]:
+    """把历史 + 当前用户问题转成 LangChain BaseMessage 列表。"""
+    messages: list[BaseMessage] = []
+    for item in history:
+        role = item.get("role")
+        content = item.get("content")
+        if not isinstance(role, str) or not isinstance(content, str):
+            continue
+        if role == "assistant":
+            messages.append(AIMessage(content))
+        elif role == "user":
+            messages.append(HumanMessage(content))
+    messages.append(HumanMessage(question))
+    return messages

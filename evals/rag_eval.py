@@ -7,7 +7,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.config import BEDROCK_EMBEDDING_MODEL_ID, EXECUTION_MODE, MODEL_PROVIDER, VECTOR_BACKEND
+from backend.config import BEDROCK_EMBEDDING_MODEL_ID, MODEL_PROVIDER, VECTOR_BACKEND
+
+EXECUTION_MODE = "langgraph"
 from backend.data.knowledge_base import build_documents, build_eval_cases
 from backend.data.processing import split_documents
 from backend.rag.retrievers import (

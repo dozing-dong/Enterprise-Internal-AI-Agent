@@ -7,13 +7,13 @@ from pydantic import BaseModel, Field
 
 
 # 支持的执行模式：
-# - rag：现有固定流水线（默认，保持向后兼容）
-# - agent：模型自决 + 工具调用循环
+# - rag：固定 LangGraph 流水线（rewrite -> hybrid retrieve -> rerank -> generate）
+# - agent：模型自决 + 工具调用循环（ReAct）
 ChatMode = Literal["rag", "agent"]
 
 
 class ChatRequest(BaseModel):
-    """聊天请求体。"""
+    """聊天请求体（POST /chat 与 POST /chat/stream 共用）。"""
 
     question: str = Field(..., min_length=1, description="用户输入的问题")
     session_id: str = Field(default="default", description="会话 ID")
@@ -42,6 +42,18 @@ class SourceItem(BaseModel):
     metadata: dict
 
 
+class TraceStepModel(BaseModel):
+    """单条统一调用轨迹，对应 ``backend/orchestrator/trace.TraceStep``。"""
+
+    step: int
+    name: str
+    input_summary: str | None = None
+    output_summary: str | None = None
+    ok: bool = True
+    latency_ms: int | None = None
+    error: str | None = None
+
+
 class ChatResponse(BaseModel):
     """聊天响应体。"""
 
@@ -52,11 +64,9 @@ class ChatResponse(BaseModel):
     session_id: str
     history_file: str
     sources: list[SourceItem]
-    # 仅 agent 模式下填充：每一步的决策日志（thought / tool_call / tool_result / final）。
-    decision_trace: list[dict] | None = None
-    # 仅 agent 模式下填充：表示是否触发了 fallback 到 RAG 流水线。
-    fallback: bool | None = None
-    # 用于前端确认本轮实际走的是哪种模式（agent 失败回退仍标 agent）。
+    # 统一的调用轨迹（RAG / Agent 两种模式格式一致）。
+    trace: list[TraceStepModel] = Field(default_factory=list)
+    # 用于前端确认本轮实际走的是哪种模式。
     mode: ChatMode | None = None
 
 

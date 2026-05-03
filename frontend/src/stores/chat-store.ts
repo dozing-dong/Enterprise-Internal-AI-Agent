@@ -11,7 +11,6 @@ import type {
   ChatMessage,
   ChatMode,
   SessionItem,
-  StreamStage,
 } from "@/types/api";
 
 const ACTIVE_SESSION_KEY = "rag-chat:active-session-id";
@@ -69,8 +68,6 @@ interface ChatState {
   sessions: SessionItem[];
   currentSessionId: string | null;
   messages: ChatMessage[];
-  stage: StreamStage | null;
-  stageMessage: string | null;
   isStreaming: boolean;
   error: string | null;
   isLoadingSessions: boolean;
@@ -93,8 +90,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   currentSessionId: null,
   messages: [],
-  stage: null,
-  stageMessage: null,
   isStreaming: false,
   error: null,
   isLoadingSessions: false,
@@ -143,8 +138,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       )],
       currentSessionId: created.session_id,
       messages: [],
-      stage: null,
-      stageMessage: null,
       error: null,
     }));
     return created;
@@ -157,8 +150,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentSessionId: sessionId,
       isLoadingHistory: true,
       messages: [],
-      stage: null,
-      stageMessage: null,
       error: null,
     });
     try {
@@ -254,9 +245,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       messages: [...state.messages, userMessage, assistantPlaceholder],
       isStreaming: true,
-      stage: mode === "agent" ? "deciding" : "rewriting",
-      stageMessage:
-        mode === "agent" ? "Thinking..." : "Refining your query...",
       error: null,
     }));
 
@@ -275,18 +263,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessionId,
         question: trimmed,
         mode,
-        onProgress: (event) => {
-          set({ stage: event.stage, stageMessage: event.message ?? null });
-        },
-        onToolCall: (event) => {
-          // Reflect the active tool name in the indicator. Even if the
-          // backend already sent a `progress(tool_running)` event, replacing
-          // the message here gives the user a more concrete cue.
-          set({
-            stage: "tool_running",
-            stageMessage: `Calling tool: ${event.name}`,
-          });
-        },
         onSources: (event) => {
           updateAssistant((msg) => ({
             ...msg,
@@ -304,13 +280,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           updateAssistant((msg) => ({
             ...msg,
             content: event.full_answer || msg.content,
+            trace: event.trace ?? msg.trace,
             isStreaming: false,
           }));
-          set({
-            isStreaming: false,
-            stage: null,
-            stageMessage: null,
-          });
+          set({ isStreaming: false });
           // Refresh sessions so the (possibly retitled) chat moves to top.
           await get().refreshSessions();
         },
@@ -323,8 +296,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }));
           set({
             isStreaming: false,
-            stage: null,
-            stageMessage: null,
             error: event.detail,
           });
         },
@@ -338,8 +309,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
       set({
         isStreaming: false,
-        stage: null,
-        stageMessage: null,
         error: detail,
       });
     }

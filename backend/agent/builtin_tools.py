@@ -1,155 +1,133 @@
-"""内置工具实现。
+"""内置 Agent 工具。
 
-- ``RagAnswerTool``：把现有 RAG 流水线作为黑盒，封装为一次性工具调用。
-  这是最重要的工具：知识问答类问题首选它。
-- ``CurrentTimeTool``：极简示例工具，主要用于验证多工具路由能力。
+- ``build_rag_answer_tool(rag_graph)``：把编译好的 RAG LangGraph 包装成一个
+  LangChain ``@tool``。该工具在被调用时同步 ``rag_graph.invoke(...)``，
+  并通过 ``Command`` 把检索到的 ``sources`` 与 ``retrieval_question``
+  写回 agent 状态，供 orchestrator 在最终 ``done`` 事件里下发给前端。
+- ``current_time``：极简工具，演示多工具路由能力。
+
+session_id 通过 ``InjectedState`` 从 agent 图状态注入，工具签名保持
+干净（只暴露给 LLM 真正可控的参数）。
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import datetime, timezone
-from typing import Any
+import json
+from datetime import datetime
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from backend.agent.schemas import ToolResult
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import InjectedToolCallId, tool
+from langgraph.prebuilt import InjectedState
+from langgraph.types import Command
 
 
-# 兼容现有 runtime.chat_executor 的签名：(question, session_id) -> dict
-ChatExecutor = Callable[[str, str], dict[str, Any]]
+_RAG_ANSWER_DESCRIPTION = (
+    "Answer a user question using the enterprise knowledge base. "
+    "This tool runs the full retrieval-augmented-generation pipeline "
+    "(query rewrite, hybrid retrieval, reranking, grounded generation) "
+    "and returns a final answer along with the cited source snippets. "
+    "Use this tool for any question that may require company knowledge, "
+    "policy details, internal documents, or factual lookup. "
+    "Prefer this tool over answering from your own memory."
+)
 
 
-class RagAnswerTool:
-    """RAG 黑盒工具：一次调用 = 一次完整 RAG 流水线。
+def build_rag_answer_tool(rag_graph: Any):
+    """工厂：把已编译的 RAG 图绑定为一个 LangChain ``@tool``。
 
-    内部直接复用 ``runtime.chat_executor``（即 langgraph 编译出的图），
-    不重新拼接 retriever / reranker / generator，确保 agent 模式与 rag 模式
-    完全等价的检索与生成行为，避免“两套实现走偏”。
+    通过闭包持有 ``rag_graph``，避免把 graph 写到全局；
+    同时让 ``rag_answer`` 的工具签名只暴露 ``question``，符合
+    Bedrock Converse 的工具协议。
     """
 
-    name = "rag_answer"
-    description = (
-        "Answer a user question using the enterprise knowledge base. "
-        "This tool runs the full retrieval-augmented-generation pipeline "
-        "(query rewrite, hybrid retrieval, reranking, grounded generation) "
-        "and returns a final answer along with the cited source snippets. "
-        "Use this tool for any question that may require company knowledge, "
-        "policy details, internal documents, or factual lookup. "
-        "Prefer this tool over answering from your own memory."
-    )
-    input_schema: dict[str, Any] = {
-        "type": "object",
-        "properties": {
-            "question": {
-                "type": "string",
-                "description": (
-                    "The user's question to answer using the knowledge base. "
-                    "Pass the original question verbatim; the tool will "
-                    "perform its own internal query rewrite."
-                ),
-            }
-        },
-        "required": ["question"],
-    }
-
-    def __init__(self, chat_executor: ChatExecutor) -> None:
-        self._chat_executor = chat_executor
-
-    def invoke(
-        self,
-        arguments: dict[str, Any],
-        *,
-        context: dict[str, Any],
-        tool_use_id: str,
-    ) -> ToolResult:
-        question = arguments.get("question")
-        if not isinstance(question, str) or not question.strip():
-            return ToolResult(
-                tool_use_id=tool_use_id,
-                name=self.name,
-                ok=False,
-                error="argument 'question' must be a non-empty string",
-            )
-
-        session_id = context.get("session_id")
+    @tool("rag_answer", description=_RAG_ANSWER_DESCRIPTION)
+    def rag_answer(
+        question: str,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """The user's question to answer using the knowledge base."""
+        session_id = state.get("session_id")
         if not isinstance(session_id, str) or not session_id:
-            return ToolResult(
-                tool_use_id=tool_use_id,
-                name=self.name,
-                ok=False,
-                error="missing session_id in agent context",
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(
+                                {"ok": False, "error": "missing session_id"},
+                                ensure_ascii=False,
+                            ),
+                            tool_call_id=tool_call_id,
+                            status="error",
+                        )
+                    ]
+                }
             )
 
-        result = self._chat_executor(question, session_id)
+        result = rag_graph.invoke(
+            {"question": question, "session_id": session_id}
+        )
+        sources = result.get("sources", []) or []
+        retrieval_question = result.get("retrieval_question", question)
+        answer = result.get("answer", "") or ""
 
-        return ToolResult(
-            tool_use_id=tool_use_id,
-            name=self.name,
-            ok=True,
-            data={
-                "answer": result.get("answer", ""),
-                "sources": result.get("sources", []),
-                "retrieval_question": result.get(
-                    "retrieval_question", question
-                ),
-                "tool_trace": result.get("tool_trace", []),
+        observation = json.dumps(
+            {
+                "ok": True,
+                "answer": answer,
+                "retrieval_question": retrieval_question,
+                "sources_count": len(sources),
             },
+            ensure_ascii=False,
         )
 
-
-class CurrentTimeTool:
-    """返回当前时间。
-
-    存在的意义：验证“非知识类问题不强行走 RAG”，确保多工具路由有效。
-    """
-
-    name = "current_time"
-    description = (
-        "Return the current date and time. "
-        "Use this when the user explicitly asks what time it is, "
-        "what today's date is, or needs the current timestamp for something. "
-        "Do NOT use this for questions that are about knowledge in documents."
-    )
-    input_schema: dict[str, Any] = {
-        "type": "object",
-        "properties": {
-            "timezone": {
-                "type": "string",
-                "description": (
-                    "Optional IANA timezone name, e.g. 'Asia/Shanghai' "
-                    "or 'UTC'. Defaults to UTC when omitted."
-                ),
+        return Command(
+            update={
+                "sources": sources,
+                "retrieval_question": retrieval_question,
+                "messages": [
+                    ToolMessage(
+                        content=observation,
+                        tool_call_id=tool_call_id,
+                        status="success",
+                    )
+                ],
             }
-        },
-        "required": [],
-    }
-
-    def invoke(
-        self,
-        arguments: dict[str, Any],
-        *,
-        context: dict[str, Any],
-        tool_use_id: str,
-    ) -> ToolResult:
-        tz_name = arguments.get("timezone")
-        try:
-            tz = ZoneInfo(tz_name) if isinstance(tz_name, str) and tz_name else timezone.utc
-        except ZoneInfoNotFoundError:
-            return ToolResult(
-                tool_use_id=tool_use_id,
-                name=self.name,
-                ok=False,
-                error=f"unknown timezone: {tz_name}",
-            )
-
-        now = datetime.now(tz)
-        return ToolResult(
-            tool_use_id=tool_use_id,
-            name=self.name,
-            ok=True,
-            data={
-                "iso": now.isoformat(),
-                "timezone": str(tz),
-                "epoch_seconds": int(now.timestamp()),
-            },
         )
+
+    return rag_answer
+
+
+@tool("current_time")
+def current_time(timezone_name: str = "Pacific/Auckland") -> str:
+    """Return the current date and time.
+
+    Use this when the user explicitly asks what time it is, what today's
+    date is, or needs the current timestamp for something. Do NOT use this
+    for questions that are about knowledge in documents.
+
+    Args:
+        timezone_name: Optional IANA timezone name, e.g. 'Asia/Shanghai' or
+            'UTC'. Defaults to Pacific/Auckland when omitted.
+    """
+    tz_name = timezone_name or "Pacific/Auckland"
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return json.dumps(
+            {"ok": False, "error": f"unknown timezone: {tz_name}"},
+            ensure_ascii=False,
+        )
+
+    now = datetime.now(tz)
+    return json.dumps(
+        {
+            "ok": True,
+            "iso": now.isoformat(),
+            "timezone": str(tz),
+            "epoch_seconds": int(now.timestamp()),
+        },
+        ensure_ascii=False,
+    )

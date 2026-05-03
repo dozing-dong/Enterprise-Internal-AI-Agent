@@ -1,8 +1,8 @@
 """聊天相关路由。
 
 包含两个入口：
-- ``POST /chat``           兼容旧版本契约，非流式，一次性返回完整答案。
-- ``POST /chat/stream``    SSE 流式接口，给前端渐进式展示进度 + token + 来源。
+- ``POST /chat``           兼容性入口，内部消费一次 ``stream`` 后聚合返回。
+- ``POST /chat/stream``    SSE 流式接口，仅下发 token / sources / done / error。
 """
 
 from __future__ import annotations
@@ -37,14 +37,25 @@ def _format_sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
+def _ensure_graph(runtime: DemoRuntime, mode: str) -> None:
+    if mode == "agent" and runtime.agent_graph is None:
+        raise RagException("Agent graph 未初始化。", status_code=503)
+    if mode == "rag" and runtime.rag_graph is None:
+        raise RagException("RAG graph 未初始化。", status_code=503)
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     runtime: Annotated[DemoRuntime, Depends(get_runtime)],
 ) -> ChatResponse:
-    """接收用户问题，按 mode 选择执行路径并返回答案与检索来源。"""
+    """非流式入口：内部消费同一条 stream 后聚合返回。
+
+    主流业务请使用 ``POST /chat/stream``。
+    """
+    _ensure_graph(runtime, request.mode)
     orchestrator = ChatOrchestrator(runtime)
-    return await run_in_threadpool(orchestrator.run, request)
+    return await run_in_threadpool(orchestrator.aggregate, request)
 
 
 @router.post("/chat/stream")
@@ -54,6 +65,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     """SSE 流式聊天接口。
 
+    事件类型：``token`` / ``sources`` / ``done`` / ``error``。
     出错时统一通过 ``error`` 事件回传。
     """
     if not _SESSION_ID_RE.match(request.session_id):
@@ -62,16 +74,11 @@ async def chat_stream(
             status_code=400,
         )
 
+    _ensure_graph(runtime, request.mode)
+
     session_record = create_session_if_missing(request.session_id)
     existing_history = read_session_history(request.session_id)
     is_first_turn = len(existing_history) == 0
-
-    if request.mode == "agent":
-        if runtime.agent_runner is None:
-            raise RagException("Agent runner 未初始化。", status_code=503)
-    else:
-        if getattr(runtime, "rag_service", None) is None:
-            raise RagException("RAG service 未初始化。", status_code=503)
 
     orchestrator = ChatOrchestrator(runtime)
 

@@ -9,44 +9,64 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 
-def _build_fake_runtime():
-    """构造一个会主动写历史的 fake runtime。
+class _FakeRagGraph:
+    """fake rag_graph：``.invoke`` 真正写历史；``.stream`` 复用之，并产出 token。"""
 
-    真实的 LangGraph executor 会在执行过程中写历史，这里复用
-    ``append_session_messages`` 模拟同样的副作用，让 ``/history``
-    路由能读到对应记录。
-    """
+    def invoke(self, payload):
+        from backend.storage.history import append_session_messages
 
-    from backend.storage.history import append_session_messages
-
-    def fake_chat(question: str, session_id: str) -> dict[str, Any]:
+        question = payload["question"]
+        session_id = payload["session_id"]
+        answer = f"fake-answer:{question}"
         append_session_messages(
             session_id,
             [
                 {"role": "user", "content": question},
-                {"role": "assistant", "content": f"fake-answer:{question}"},
+                {"role": "assistant", "content": answer},
             ],
         )
         return {
-            "answer": f"fake-answer:{question}",
-            "original_question": question,
-            "retrieval_question": question,
+            "answer": answer,
             "sources": [
                 {"rank": 1, "content": "snippet", "metadata": {"source": "fake"}},
             ],
+            "retrieval_question": question,
+            "original_question": question,
         }
 
+    def stream(self, payload, *, stream_mode):
+        result = self.invoke(payload)
+        from langchain_core.messages import AIMessageChunk
+
+        yield (
+            "updates",
+            {
+                "finalize": {
+                    "answer": result["answer"],
+                    "sources": result["sources"],
+                    "retrieval_question": result["retrieval_question"],
+                    "original_question": result["original_question"],
+                }
+            },
+        )
+        chunk = AIMessageChunk(content=result["answer"])
+        meta = {"langgraph_node": "generate_answer"}
+        yield ("messages", (chunk, meta))
+
+
+def _build_fake_runtime():
+    rag_graph = _FakeRagGraph()
     return SimpleNamespace(
         documents=[object()],
-        chat_executor=fake_chat,
         execution_mode="fake-mode",
         vector_document_count=1,
+        rag_graph=rag_graph,
+        agent_graph=None,
     )
 
 

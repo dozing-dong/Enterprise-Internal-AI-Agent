@@ -19,7 +19,7 @@ from backend.config import (
     RRF_K,
     VECTOR_WEIGHT,
 )
-from backend.rag.models import embed_texts
+from backend.llm import embed_texts
 from backend.types import RagDocument
 
 

@@ -2,6 +2,7 @@ import { Bot, User } from "lucide-react";
 import type { ChatMessage } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { SourcesPopover } from "@/components/sources-popover";
+import { TracePopover } from "@/components/trace-popover";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -9,6 +10,11 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
+
+  const hasSources =
+    !isUser && Array.isArray(message.sources) && message.sources.length > 0;
+  const hasTrace =
+    !isUser && Array.isArray(message.trace) && message.trace.length > 0;
 
   return (
     <div
@@ -53,11 +59,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           ) : null}
         </div>
 
-        {!isUser && message.sources && message.sources.length > 0 ? (
-          <SourcesPopover
-            sources={message.sources}
-            retrievalQuestion={message.retrievalQuestion}
-          />
+        {hasSources || hasTrace ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {hasSources ? (
+              <SourcesPopover
+                sources={message.sources!}
+                retrievalQuestion={message.retrievalQuestion}
+              />
+            ) : null}
+            {hasTrace ? <TracePopover trace={message.trace!} /> : null}
+          </div>
         ) : null}
       </div>
 

@@ -6,7 +6,8 @@ from backend.runtime import create_demo_runtime
 
 
 def evaluate_langgraph(sample_size: int | None = None) -> dict:
-    runtime = create_demo_runtime(execution_mode="langgraph")
+    runtime = create_demo_runtime()
+    rag_graph = runtime.rag_graph
     eval_cases = build_eval_cases()
 
     if sample_size is not None:
@@ -19,7 +20,9 @@ def evaluate_langgraph(sample_size: int | None = None) -> dict:
     for case in eval_cases:
         start = time.perf_counter()
         try:
-            result = runtime.chat_executor(case["question"], "eval_langgraph")
+            result = rag_graph.invoke(
+                {"question": case["question"], "session_id": "eval_langgraph"}
+            )
             source_counts.append(len(result.get("sources", [])))
         except Exception:
             failures += 1

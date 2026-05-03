@@ -2,11 +2,8 @@ import type {
   ChatMode,
   DoneEvent,
   ErrorEvent,
-  ProgressEvent,
   SourcesEvent,
   TokenEvent,
-  ToolCallEvent,
-  ToolResultEvent,
 } from "@/types/api";
 
 // Lightweight SSE client over fetch + ReadableStream.
@@ -14,14 +11,10 @@ import type {
 // while POST /chat/stream takes a JSON body.
 
 export interface StreamHandlers {
-  onProgress?: (event: ProgressEvent) => void;
   onSources?: (event: SourcesEvent) => void;
   onToken?: (event: TokenEvent) => void;
   onDone?: (event: DoneEvent) => void;
   onError?: (event: ErrorEvent) => void;
-  // Agent-mode only callbacks; safe to omit when running in rag mode.
-  onToolCall?: (event: ToolCallEvent) => void;
-  onToolResult?: (event: ToolResultEvent) => void;
 }
 
 export interface StreamChatOptions extends StreamHandlers {
@@ -69,9 +62,6 @@ function dispatch(parsed: ParsedEvent, handlers: StreamHandlers): void {
   }
 
   switch (parsed.event) {
-    case "progress":
-      handlers.onProgress?.(payload as ProgressEvent);
-      break;
     case "sources":
       handlers.onSources?.(payload as SourcesEvent);
       break;
@@ -83,12 +73,6 @@ function dispatch(parsed: ParsedEvent, handlers: StreamHandlers): void {
       break;
     case "error":
       handlers.onError?.(payload as ErrorEvent);
-      break;
-    case "tool_call":
-      handlers.onToolCall?.(payload as ToolCallEvent);
-      break;
-    case "tool_result":
-      handlers.onToolResult?.(payload as ToolResultEvent);
       break;
     default:
       break;

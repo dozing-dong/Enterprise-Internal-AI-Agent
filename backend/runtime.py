@@ -1,10 +1,15 @@
-from typing import Any, Callable
+"""项目运行时装配。
 
-from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
-from backend.agent.runner import AgentRunner
-from backend.agent.tools import ToolRegistry
+把所有依赖一次性构造好暴露给 CLI / API：
+- ``rag_graph``：编译好的 RAG LangGraph，``.invoke()`` 与 ``.stream()`` 通用。
+- ``agent_graph``：编译好的 Agent ReAct LangGraph；其工具集中包含
+  ``rag_answer``，由 ``rag_graph`` 注入；不再走任何 fallback。
+"""
+
+from typing import Any
+
+from backend.agent import build_agent_graph, build_rag_answer_tool, current_time
 from backend.config import (
-    EXECUTION_MODE,
     LANGGRAPH_MAX_ITERATIONS,
     LANGGRAPH_MIN_SOURCES,
     QUERY_REWRITE_ENABLED,
@@ -16,7 +21,7 @@ from backend.config import (
 )
 from backend.data.knowledge_base import build_documents
 from backend.data.processing import split_documents
-from backend.rag.chain import build_langgraph_executor
+from backend.rag.chain import build_rag_graph
 from backend.rag.rerank import Reranker, build_reranker
 from backend.rag.retrievers import (
     SearchRetriever,
@@ -29,11 +34,11 @@ from backend.rag.retrievers import (
     rebuild_vectorstore,
 )
 from backend.rag.rewrite import build_query_rewrite_chain
-from backend.rag.service import RagService
 from backend.types import RagDocument
 
 
 _UNSET: Any = object()
+EXECUTION_MODE_NAME = "langgraph"
 
 
 class DemoRuntime:
@@ -48,53 +53,26 @@ class DemoRuntime:
         keyword_retriever: SearchRetriever,
         retriever: SearchRetriever,
         rewrite_chain: Any | None,
-        chat_executor: Callable[[str, str], dict],
-        execution_mode: str,
+        rag_graph: Any,
+        agent_graph: Any,
         vector_document_count: int,
         reranker: Reranker | None = None,
-        tool_registry: ToolRegistry | None = None,
-        agent_runner: AgentRunner | None = None,
-        rag_service: RagService | None = None,
     ) -> None:
-        # 保存原始文档。
         self.documents = documents
-
-        # 保存切分后的片段。
         self.split_documents_list = split_documents_list
-
-        # 保存向量库对象。
         self.vectorstore = vectorstore
-
-        # 保存检索器。
         self.retriever = retriever
-
-        # 保存向量检索器。
         self.vector_retriever = vector_retriever
-
-        # 保存关键词检索器。
         self.keyword_retriever = keyword_retriever
-
-        # 保存查询改写链。
         self.rewrite_chain = rewrite_chain
 
-        # 保存统一的聊天执行器。
-        self.chat_executor = chat_executor
+        # 两个核心可流式 LangGraph 应用。
+        self.rag_graph = rag_graph
+        self.agent_graph = agent_graph
 
-        # 保存当前执行模式。
-        self.execution_mode = execution_mode
-
-        # 保存向量库文档数量。
+        self.execution_mode = EXECUTION_MODE_NAME
         self.vector_document_count = vector_document_count
-
-        # 保存重排器（可能为 None，表示未启用重排）。
         self.reranker = reranker
-
-        # Agent 模式相关：工具注册表与运行器。
-        # 在没有显式注入时，由 ``create_demo_runtime`` 统一构建；
-        # 测试场景允许传入 None（不启用 agent 模式）。
-        self.tool_registry = tool_registry
-        self.agent_runner = agent_runner
-        self.rag_service = rag_service
 
 
 def prepare_documents_for_rag() -> tuple[list[RagDocument], list[RagDocument]]:
@@ -133,7 +111,6 @@ def build_demo_rewrite_chain() -> Any | None:
     """根据配置决定是否启用查询改写。"""
     if not QUERY_REWRITE_ENABLED:
         return None
-
     return build_query_rewrite_chain()
 
 
@@ -145,31 +122,18 @@ def build_demo_reranker() -> Reranker | None:
 
 
 def _resolve_retrieval_top_k() -> int:
-    """根据是否启用重排，返回召回阶段实际使用的候选数。
-
-    启用重排时扩大候选池，让 reranker 有足够材料挑选；
-    关闭时退回原本的 RETRIEVER_TOP_K，保持旧行为。
-    """
+    """根据是否启用重排，返回召回阶段实际使用的候选数。"""
     if RERANK_ENABLED:
         return max(RETRIEVER_CANDIDATE_K, RERANK_TOP_K)
     return RETRIEVER_TOP_K
 
 
-def build_default_tool_registry(
-    chat_executor: Callable[[str, str], dict],
-) -> ToolRegistry:
-    """构建默认工具集：rag_answer + current_time。
-
-    抽成独立函数主要为方便单测注入自定义工具。
-    """
-    registry = ToolRegistry()
-    registry.register(RagAnswerTool(chat_executor))
-    registry.register(CurrentTimeTool())
-    return registry
+def build_default_agent_tools(rag_graph: Any) -> list:
+    """构造默认工具集：rag_answer + current_time。"""
+    return [build_rag_answer_tool(rag_graph), current_time]
 
 
 def create_demo_runtime(
-    execution_mode: str | None = None,
     *,
     documents: list[RagDocument] | None = None,
     split_documents_list: list[RagDocument] | None = None,
@@ -179,20 +143,11 @@ def create_demo_runtime(
     retriever: SearchRetriever | None = None,
     rewrite_chain: Any = _UNSET,
     reranker: Any = _UNSET,
-    chat_executor: Callable[[str, str], dict] | None = None,
     vector_document_count: int | None = None,
-    tool_registry: ToolRegistry | None = None,
-    agent_runner: AgentRunner | None = None,
-    rag_service: RagService | None = None,
+    rag_graph: Any | None = None,
+    agent_graph: Any | None = None,
 ) -> DemoRuntime:
-    """创建在线服务和 CLI 需要的运行时对象。
-
-    支持按需注入任意子依赖，缺省时回退到默认装配路径。
-    用 _UNSET 区分 rewrite_chain / reranker 的 None 语义
-    （None 表示显式禁用，缺省走配置默认值）。
-    """
-    selected_execution_mode = execution_mode or EXECUTION_MODE
-
+    """创建在线服务和 CLI 需要的运行时对象。"""
     if documents is None or split_documents_list is None:
         default_docs, default_splits = prepare_documents_for_rag()
         documents = documents if documents is not None else default_docs
@@ -233,33 +188,20 @@ def create_demo_runtime(
     if reranker is _UNSET:
         reranker = build_demo_reranker()
 
-    if chat_executor is None:
-        chat_executor = _build_chat_executor(
-            vector_retriever,
-            keyword_retriever,
-            rewrite_chain,
-            reranker=reranker,
-            execution_mode=selected_execution_mode,
-            retrieval_top_k=retrieval_top_k,
-        )
-
-    if tool_registry is None:
-        tool_registry = build_default_tool_registry(chat_executor)
-
-    if agent_runner is None:
-        agent_runner = AgentRunner(
-            tool_registry,
-            chat_executor_fallback=chat_executor,
-        )
-
-    if rag_service is None:
-        rag_service = RagService(
-            chat_executor=chat_executor,
+    if rag_graph is None:
+        rag_graph = build_rag_graph(
             vector_retriever=vector_retriever,
             keyword_retriever=keyword_retriever,
             rewrite_chain=rewrite_chain,
+            max_iterations=LANGGRAPH_MAX_ITERATIONS,
+            min_sources=LANGGRAPH_MIN_SOURCES,
+            top_k=retrieval_top_k,
             reranker=reranker,
+            rerank_top_k=RERANK_TOP_K if reranker is not None else None,
         )
+
+    if agent_graph is None:
+        agent_graph = build_agent_graph(build_default_agent_tools(rag_graph))
 
     return DemoRuntime(
         documents,
@@ -269,38 +211,8 @@ def create_demo_runtime(
         keyword_retriever,
         retriever,
         rewrite_chain,
-        chat_executor=chat_executor,
-        execution_mode=selected_execution_mode,
+        rag_graph=rag_graph,
+        agent_graph=agent_graph,
         vector_document_count=vector_document_count,
         reranker=reranker,
-        tool_registry=tool_registry,
-        agent_runner=agent_runner,
-        rag_service=rag_service,
-    )
-
-
-def _build_chat_executor(
-    vector_retriever: SearchRetriever,
-    keyword_retriever: SearchRetriever,
-    rewrite_chain: Any | None,
-    *,
-    reranker: Reranker | None,
-    execution_mode: str,
-    retrieval_top_k: int,
-) -> Callable[[str, str], dict]:
-    if execution_mode != "langgraph":
-        raise ValueError("当前版本仅支持 langgraph 执行模式。")
-
-    langgraph_executor = build_langgraph_executor(
-        vector_retriever=vector_retriever,
-        keyword_retriever=keyword_retriever,
-        rewrite_chain=rewrite_chain,
-        max_iterations=LANGGRAPH_MAX_ITERATIONS,
-        min_sources=LANGGRAPH_MIN_SOURCES,
-        top_k=retrieval_top_k,
-        reranker=reranker,
-        rerank_top_k=RERANK_TOP_K if reranker is not None else None,
-    )
-    return lambda question, session_id: langgraph_executor.invoke(
-        {"question": question, "session_id": session_id}
     )

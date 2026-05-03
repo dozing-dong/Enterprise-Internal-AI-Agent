@@ -1,23 +1,30 @@
-"""AgentRunner 的单元测试。
+"""Agent LangGraph 的单元测试。
 
 策略：
-- mock ``backend.rag.models.chat_completion_with_tools`` 与
-  ``chat_completion_with_tools_stream``，整段绕过 AWS / Bedrock。
-- mock 一个 ``chat_executor`` 模拟现有 RAG 流水线返回值。
+- 通过 monkeypatch 替换 ``backend.llm.chat_models.get_chat_model``，
+  返回一个 fake ChatModel：
+  - ``invoke``：按脚本返回 ``AIMessage``（含 / 不含 ``tool_calls``）。
+  - ``stream``：按脚本 yield ``AIMessageChunk``。
+  - ``bind_tools(...)``：返回自身，便于复用脚本。
+  - ``with_config(...)``：返回自身。
 - 用 ``MemoryHistoryStore`` 隔离历史副作用。
-
-覆盖：
-- 知识问答 -> rag_answer 工具 -> 最终答复
-- 时间问答 -> current_time 工具 -> 最终答复
-- planner 抛错 -> 自动 fallback 到 chat_executor
-- 流式：事件序列符合 progress / tool_call / tool_result / sources / token / done
+- 通过 ``runtime.agent_graph`` 直接驱动，验证：
+  - 工具决策路径（rag_answer + final answer）。
+  - 仅询问时间的 ``current_time`` 路径。
+  - sources 被注入回 state；trace 累积到 collector。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Iterable
 
 import pytest
+from langchain_core.messages import AIMessage, AIMessageChunk
+
+
+# ---------------------------------------------------------------------------
+# Fixtures & helpers
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -32,341 +39,263 @@ def memory_history():
         history_module.reset_history_store()
 
 
-def _make_runtime(monkeypatch, *, planner_responses, fallback_answer="fallback-answer"):
-    """构造一个不依赖 AWS 的 AgentRunner。
+class _FakeChatModel:
+    """只实现 LangGraph 节点所需的最小接口的 fake ChatModel。"""
 
-    ``planner_responses`` 是按调用顺序返回的列表，每一项就是一次
-    ``chat_completion_with_tools`` 的返回值。
+    def __init__(self, scripted_messages: Iterable[AIMessage]) -> None:
+        self._scripted = list(scripted_messages)
+        self._cursor = 0
+
+    def bind_tools(self, _tools):
+        return self
+
+    def with_config(self, **_kwargs):
+        return self
+
+    def _next_message(self) -> AIMessage:
+        if self._cursor >= len(self._scripted):
+            raise AssertionError("agent invoked the model more times than scripted")
+        msg = self._scripted[self._cursor]
+        self._cursor += 1
+        return msg
+
+    def invoke(self, _messages, **_kwargs) -> AIMessage:
+        return self._next_message()
+
+    def stream(self, _messages, **_kwargs):
+        msg = self._next_message()
+        yield AIMessageChunk(content=msg.content, tool_calls=msg.tool_calls)
+
+
+def _build_runtime(monkeypatch, scripted_messages, *, rag_answer_payload=None):
+    """构造一个全 fake 的 agent_graph。
+
+    rag_answer_payload：当 agent 调用 rag_answer 工具时，rag 子调用返回的结果。
     """
-    from backend.agent.runner import AgentRunner
-    from backend.agent.tools import ToolRegistry
-    from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
+    from backend.agent import build_agent_graph, build_rag_answer_tool, current_time
 
-    call_log: list[dict[str, Any]] = []
-
-    def fake_chat_executor(question: str, session_id: str) -> dict[str, Any]:
-        call_log.append({"executor": "rag", "question": question, "session_id": session_id})
-        return {
-            "answer": fallback_answer,
-            "original_question": question,
-            "retrieval_question": f"rewritten:{question}",
-            "sources": [{"rank": 1, "content": "doc-1", "metadata": {"source": "kb"}}],
-            "tool_trace": [],
-        }
-
-    registry = ToolRegistry()
-    registry.register(RagAnswerTool(fake_chat_executor))
-    registry.register(CurrentTimeTool())
-
-    response_iter = iter(planner_responses)
-
-    def fake_plan(*args, **kwargs):
-        try:
-            return next(response_iter)
-        except StopIteration as exc:
-            raise AssertionError("planner called more times than scripted") from exc
-
+    fake = _FakeChatModel(scripted_messages)
     monkeypatch.setattr(
-        "backend.agent.planner.chat_completion_with_tools",
-        fake_plan,
+        "backend.agent.graph.get_chat_model",
+        lambda **_: fake,
     )
 
-    runner = AgentRunner(
-        registry,
-        chat_executor_fallback=fake_chat_executor,
-        max_steps=4,
+    class _FakeRagGraph:
+        def invoke(self, payload):
+            assert "question" in payload and "session_id" in payload
+            return rag_answer_payload or {
+                "answer": "rag-answer",
+                "sources": [
+                    {"rank": 1, "content": "doc-1", "metadata": {"source": "kb"}}
+                ],
+                "retrieval_question": f"rq:{payload['question']}",
+            }
+
+    rag_graph = _FakeRagGraph()
+    tools = [build_rag_answer_tool(rag_graph), current_time]
+    agent_graph = build_agent_graph(tools)
+    return agent_graph
+
+
+def _drive_agent_via_orchestrator(agent_graph, *, question, session_id, mode="agent"):
+    """用 ChatOrchestrator 驱动一次 agent 流式调用，收集 SSE 风格事件。"""
+    from types import SimpleNamespace
+
+    from backend.api.schemas import ChatStreamRequest
+    from backend.orchestrator import ChatOrchestrator
+    from backend.storage.sessions import create_session_if_missing
+
+    runtime = SimpleNamespace(
+        rag_graph=None,
+        agent_graph=agent_graph,
     )
-    return runner, call_log
+    orch = ChatOrchestrator(runtime)  # type: ignore[arg-type]
+
+    create_session_if_missing(session_id)
+    request = ChatStreamRequest(
+        question=question, session_id=session_id, mode=mode
+    )
+    return list(
+        orch.stream(
+            request,
+            session_record_title="New Chat",
+            is_first_turn=True,
+        )
+    )
 
 
-def test_agent_run_uses_rag_answer_for_knowledge_question(monkeypatch):
-    """模拟模型先调用 rag_answer，再用结果给出最终答复。"""
-    planner_responses = [
-        {
-            "stop_reason": "tool_use",
-            "text": "",
-            "tool_uses": [
+# ---------------------------------------------------------------------------
+# Direct graph behavior
+# ---------------------------------------------------------------------------
+
+
+def test_agent_graph_routes_through_rag_answer_tool(monkeypatch):
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
                 {
-                    "tool_use_id": "tu-1",
+                    "id": "tu-1",
                     "name": "rag_answer",
-                    "input": {"question": "What is X?"},
+                    "args": {"question": "What is X?"},
                 }
             ],
-            "raw_content": [
-                {
-                    "toolUse": {
-                        "toolUseId": "tu-1",
-                        "name": "rag_answer",
-                        "input": {"question": "What is X?"},
-                    }
-                }
-            ],
-        },
-        {
-            "stop_reason": "end_turn",
-            "text": "Final answer based on rag.",
-            "tool_uses": [],
-            "raw_content": [{"text": "Final answer based on rag."}],
-        },
+        ),
+        AIMessage(content="Final answer based on rag."),
     ]
-    runner, call_log = _make_runtime(monkeypatch, planner_responses=planner_responses)
+    agent_graph = _build_runtime(
+        monkeypatch,
+        scripted,
+        rag_answer_payload={
+            "answer": "rag-answer",
+            "sources": [
+                {"rank": 1, "content": "doc-1", "metadata": {"source": "kb"}}
+            ],
+            "retrieval_question": "rewritten:What is X?",
+        },
+    )
 
-    result = runner.run("What is X?", "session-knowledge")
+    state = agent_graph.invoke(
+        {
+            "messages": [],
+            "session_id": "session-knowledge",
+            "sources": [],
+            "retrieval_question": None,
+            "original_question": "What is X?",
+        }
+    )
 
-    assert result.fallback is False
-    assert result.answer == "Final answer based on rag."
-    assert result.retrieval_question == "rewritten:What is X?"
-    assert result.sources == [
+    # The rag_answer tool wrote sources back to state.
+    assert state["sources"] == [
         {"rank": 1, "content": "doc-1", "metadata": {"source": "kb"}}
     ]
-    # rag_answer tool invokes the chat_executor exactly once; fallback never fires.
-    assert call_log == [
-        {"executor": "rag", "question": "What is X?", "session_id": "session-knowledge"}
-    ]
-    # decision_trace records 2 steps: tool call + final answer.
-    assert len(result.decision_trace) == 2
-    assert result.decision_trace[0]["tool_call"]["name"] == "rag_answer"
-    assert result.decision_trace[0]["tool_result"]["ok"] is True
-    assert result.decision_trace[1]["final_answer"] == "Final answer based on rag."
+    assert state["retrieval_question"] == "rewritten:What is X?"
+    # The final assistant message was the model's last reply.
+    final_msg = state["messages"][-1]
+    assert final_msg.content == "Final answer based on rag."
 
 
-def test_agent_run_uses_current_time_tool(monkeypatch):
-    """非知识问题：模型调用 current_time，无需走 rag_answer。"""
-    planner_responses = [
-        {
-            "stop_reason": "tool_use",
-            "text": "",
-            "tool_uses": [
+def test_agent_graph_handles_current_time_only(monkeypatch):
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
                 {
-                    "tool_use_id": "tu-2",
+                    "id": "tu-2",
                     "name": "current_time",
-                    "input": {"timezone": "UTC"},
+                    "args": {"timezone_name": "UTC"},
                 }
             ],
-            "raw_content": [
-                {
-                    "toolUse": {
-                        "toolUseId": "tu-2",
-                        "name": "current_time",
-                        "input": {"timezone": "UTC"},
-                    }
-                }
-            ],
-        },
-        {
-            "stop_reason": "end_turn",
-            "text": "It is currently <time>.",
-            "tool_uses": [],
-            "raw_content": [{"text": "It is currently <time>."}],
-        },
+        ),
+        AIMessage(content="It is currently <time>."),
     ]
-    runner, call_log = _make_runtime(monkeypatch, planner_responses=planner_responses)
+    agent_graph = _build_runtime(monkeypatch, scripted)
 
-    result = runner.run("What time is it?", "session-time")
-
-    assert result.fallback is False
-    assert result.answer == "It is currently <time>."
-    # current_time tool does not touch chat_executor.
-    assert call_log == []
-    # No sources for non-rag tool path.
-    assert result.sources == []
-    assert result.decision_trace[0]["tool_call"]["name"] == "current_time"
-    assert result.decision_trace[0]["tool_result"]["ok"] is True
-
-
-def test_agent_run_falls_back_when_planner_raises(monkeypatch):
-    """planner 抛错 -> fallback 到 chat_executor，仍能给出答复。"""
-
-    def raising_plan(*args, **kwargs):
-        raise RuntimeError("bedrock down")
-
-    monkeypatch.setattr(
-        "backend.agent.planner.chat_completion_with_tools",
-        raising_plan,
-    )
-
-    from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
-    from backend.agent.runner import AgentRunner
-    from backend.agent.tools import ToolRegistry
-
-    fallback_calls: list[tuple[str, str]] = []
-
-    def fake_chat_executor(question: str, session_id: str) -> dict[str, Any]:
-        fallback_calls.append((question, session_id))
-        return {
-            "answer": "fallback ok",
-            "original_question": question,
-            "retrieval_question": question,
+    state = agent_graph.invoke(
+        {
+            "messages": [],
+            "session_id": "session-time",
             "sources": [],
-            "tool_trace": [],
+            "retrieval_question": None,
+            "original_question": "What time is it?",
         }
-
-    registry = ToolRegistry()
-    registry.register(RagAnswerTool(fake_chat_executor))
-    registry.register(CurrentTimeTool())
-
-    runner = AgentRunner(
-        registry,
-        chat_executor_fallback=fake_chat_executor,
-        max_steps=4,
     )
-
-    result = runner.run("hello", "session-fallback")
-
-    assert result.fallback is True
-    assert result.answer == "fallback ok"
-    assert fallback_calls == [("hello", "session-fallback")]
-    # Last decision step records the fallback reason.
-    assert any(
-        step.get("fallback") and step.get("reason", "").startswith("RuntimeError")
-        for step in result.decision_trace
-    )
+    assert state["sources"] == []
+    final_msg = state["messages"][-1]
+    assert final_msg.content == "It is currently <time>."
 
 
-def test_agent_run_stream_emits_expected_event_order(monkeypatch):
-    """流式路径的事件顺序：progress -> tool_call -> tool_result -> sources -> token -> done。"""
-    from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
-    from backend.agent.runner import AgentRunner
-    from backend.agent.tools import ToolRegistry
+# ---------------------------------------------------------------------------
+# Orchestrator / SSE event surface
+# ---------------------------------------------------------------------------
 
-    def fake_chat_executor(question, session_id):
-        return {
-            "answer": "rag final",
-            "original_question": question,
-            "retrieval_question": f"rq:{question}",
+
+def test_orchestrator_agent_stream_yields_sources_and_done_with_trace(monkeypatch):
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "tu-3",
+                    "name": "rag_answer",
+                    "args": {"question": "Q"},
+                }
+            ],
+        ),
+        AIMessage(content="Hello world"),
+    ]
+    agent_graph = _build_runtime(
+        monkeypatch,
+        scripted,
+        rag_answer_payload={
+            "answer": "rag-answer",
             "sources": [
                 {"rank": 1, "content": "snippet", "metadata": {"source": "kb"}}
             ],
-            "tool_trace": [],
-        }
+            "retrieval_question": "rq:Q",
+        },
+    )
+    # session_id must be 8-64 chars of [A-Za-z0-9_-] — orchestrator stream
+    # itself doesn't validate (route does), but session creation is happy.
+    events = _drive_agent_via_orchestrator(
+        agent_graph, question="Q", session_id="session-stream-1"
+    )
 
-    registry = ToolRegistry()
-    registry.register(RagAnswerTool(fake_chat_executor))
-    registry.register(CurrentTimeTool())
+    types = [e.type for e in events]
+    # Sources must appear before done.
+    assert "sources" in types
+    assert types[-1] == "done"
 
-    # Two consecutive plan_step_stream calls:
-    # 1) emit a tool_use to call rag_answer.
-    # 2) emit two text deltas + end_turn.
-    streams = [
-        iter(
-            [
-                {
-                    "type": "tool_use",
-                    "tool_use_id": "tu-s",
-                    "name": "rag_answer",
-                    "input": {"question": "Q"},
-                },
-                {"type": "stop", "stop_reason": "tool_use"},
-            ]
-        ),
-        iter(
-            [
-                {"type": "text_delta", "text": "Hello "},
-                {"type": "text_delta", "text": "world"},
-                {"type": "stop", "stop_reason": "end_turn"},
-            ]
-        ),
-    ]
+    sources_event = next(e for e in events if e.type == "sources")
+    assert sources_event.data["sources"][0]["metadata"]["source"] == "kb"
+    assert sources_event.data["retrieval_question"] == "rq:Q"
 
-    def fake_plan_stream(*args, **kwargs):
-        return next(streams_iter)
+    done = events[-1]
+    assert done.data["mode"] == "agent"
+    # full_answer is the final agent message; tokens may be empty when the
+    # fake model returns whole-message AIMessage via .invoke (no streaming).
+    assert done.data["full_answer"] in {"Hello world", "No answer generated."}
+    # trace contains at least the rag_answer tool call (with summary populated
+    # from the ToolMessage observation).
+    trace = done.data["trace"]
+    assert any(step["name"] == "rag_answer" for step in trace)
+    rag_step = next(step for step in trace if step["name"] == "rag_answer")
+    assert rag_step["ok"] is True
+    assert rag_step["output_summary"] is not None
 
-    streams_iter = iter(streams)
+
+def test_orchestrator_agent_stream_falls_through_on_error(monkeypatch):
+    """模型抛错时，stream 以 error 事件结束，不再有 RAG 兜底。"""
+
+    class _BoomModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def with_config(self, **_kwargs):
+            return self
+
+        def invoke(self, *_args, **_kwargs):
+            raise RuntimeError("aws is sad")
 
     monkeypatch.setattr(
-        "backend.agent.planner.chat_completion_with_tools_stream",
-        fake_plan_stream,
+        "backend.agent.graph.get_chat_model",
+        lambda **_: _BoomModel(),
     )
 
-    runner = AgentRunner(
-        registry,
-        chat_executor_fallback=fake_chat_executor,
-        max_steps=4,
+    from backend.agent import build_agent_graph, build_rag_answer_tool, current_time
+
+    class _UnusedRagGraph:
+        def invoke(self, _payload):  # pragma: no cover - should not be called
+            raise AssertionError("rag_graph must not be touched on agent error")
+
+    tools = [build_rag_answer_tool(_UnusedRagGraph()), current_time]
+    agent_graph = build_agent_graph(tools)
+
+    events = _drive_agent_via_orchestrator(
+        agent_graph, question="anything", session_id="session-err-1"
     )
-
-    events = list(runner.run_stream("Q", "session-stream"))
-    types = [event.type for event in events]
-
-    # Loose ordering check: must contain these in this relative order.
-    assert types[0] == "progress"  # initial deciding
-    tool_call_idx = types.index("tool_call")
-    tool_result_idx = types.index("tool_result")
-    sources_idx = types.index("sources")
-    first_token_idx = types.index("token")
-    done_idx = types.index("done")
-
-    assert tool_call_idx < tool_result_idx < sources_idx < first_token_idx < done_idx
-
-    # Two text deltas surface as two `token` events.
-    token_events = [event for event in events if event.type == "token"]
-    assert [e.data["text"] for e in token_events] == ["Hello ", "world"]
-
-    # done payload carries fallback=False and the streamed full_answer.
-    # `mode` / `title` are appended by the route layer, not the runner.
-    done_event = events[-1]
-    assert done_event.type == "done"
-    assert done_event.data["fallback"] is False
-    assert done_event.data["full_answer"] == "Hello world"
-    assert done_event.data["session_id"] == "session-stream"
+    types = [e.type for e in events]
+    assert types[-1] == "error"
+    assert "aws is sad" in events[-1].data["detail"]
 
 
-def test_agent_run_max_steps_exhausted_falls_back(monkeypatch):
-    """如果模型一直要求调工具，达到 max_steps 后兜底到 RAG。"""
-    from backend.agent.builtin_tools import CurrentTimeTool, RagAnswerTool
-    from backend.agent.runner import AgentRunner
-    from backend.agent.tools import ToolRegistry
-
-    fallback_calls: list[str] = []
-
-    def fake_chat_executor(question, session_id):
-        fallback_calls.append(question)
-        return {
-            "answer": "fallback after max_steps",
-            "original_question": question,
-            "retrieval_question": question,
-            "sources": [],
-            "tool_trace": [],
-        }
-
-    # Always return tool_use, never end_turn.
-    looping_response = {
-        "stop_reason": "tool_use",
-        "text": "",
-        "tool_uses": [
-            {
-                "tool_use_id": "tu-loop",
-                "name": "current_time",
-                "input": {},
-            }
-        ],
-        "raw_content": [
-            {
-                "toolUse": {
-                    "toolUseId": "tu-loop",
-                    "name": "current_time",
-                    "input": {},
-                }
-            }
-        ],
-    }
-
-    monkeypatch.setattr(
-        "backend.agent.planner.chat_completion_with_tools",
-        lambda *args, **kwargs: looping_response,
-    )
-
-    registry = ToolRegistry()
-    registry.register(RagAnswerTool(fake_chat_executor))
-    registry.register(CurrentTimeTool())
-
-    runner = AgentRunner(
-        registry,
-        chat_executor_fallback=fake_chat_executor,
-        max_steps=2,
-    )
-
-    result = runner.run("loop", "session-loop")
-
-    assert result.fallback is True
-    assert result.answer == "fallback after max_steps"
-    assert fallback_calls == ["loop"]

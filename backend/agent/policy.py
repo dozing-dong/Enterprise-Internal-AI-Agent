@@ -1,10 +1,11 @@
 """Agent 决策层的策略配置。
 
 集中管理：
-- 系统提示词（决定模型如何选择工具与回答风格）
-- 预算/超时常量（max_steps、单工具调用上限等）
+- 系统提示词（决定模型如何选择工具与回答风格）。
+- 决策温度。
 
-所有运行期参数都允许通过环境变量覆盖，便于线上灰度调整。
+LangGraph 的 ReAct 循环步数由编译图的 ``recursion_limit`` 控制（默认 25），
+不再单独维护 ``AGENT_MAX_STEPS``。
 """
 
 from __future__ import annotations
@@ -30,13 +31,6 @@ AGENT_SYSTEM_PROMPT = (
     "5. If the available tools cannot help, clearly say you do not know "
     "rather than making things up.\n"
     "6. Respond in the same language as the user's question."
-)
-
-AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "5"))
-
-# 单次工具调用的软上限，仅做日志告警；硬超时由具体工具/底层 SDK 决定。
-AGENT_TOOL_LATENCY_WARN_MS = int(
-    os.getenv("AGENT_TOOL_LATENCY_WARN_MS", "20000")
 )
 
 # 决策层调用 LLM 的温度；保持 0.0 便于复现。
