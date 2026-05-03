@@ -89,3 +89,13 @@ LANGGRAPH_MIN_SOURCES = int(os.getenv("LANGGRAPH_MIN_SOURCES", "1"))
 # 默认走 postgres，与向量库共用同一个连接配置；memory 仅用于测试隔离。
 HISTORY_BACKEND = os.getenv("HISTORY_BACKEND", "postgres")
 HISTORY_TABLE = os.getenv("HISTORY_TABLE", "rag_chat_history")
+
+# 员工结构化检索：与向量库共用同一套 PG 连接配置。
+# - ``EMPLOYEE_TABLE``：员工目录表名（启动时 CREATE IF NOT EXISTS）。
+# - ``EMPLOYEE_LOOKUP_TOP_K``：单次模糊检索默认返回上限。
+# - ``EMPLOYEE_RAG_MANDATORY``：是否在 RAG chain 中固定执行员工检索节点。
+# - ``EMPLOYEE_SEED_ON_STARTUP``：服务启动时是否写入 demo 员工数据。
+EMPLOYEE_TABLE = os.getenv("EMPLOYEE_TABLE", "rag_employees")
+EMPLOYEE_LOOKUP_TOP_K = int(os.getenv("EMPLOYEE_LOOKUP_TOP_K", "5"))
+EMPLOYEE_RAG_MANDATORY = os.getenv("EMPLOYEE_RAG_MANDATORY", "true").lower() == "true"
+EMPLOYEE_SEED_ON_STARTUP = os.getenv("EMPLOYEE_SEED_ON_STARTUP", "true").lower() == "true"

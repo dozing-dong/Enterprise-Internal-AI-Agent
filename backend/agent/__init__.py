@@ -4,7 +4,11 @@
 通过 LangGraph 的 ReAct 循环让模型自主选择工具完成回答。
 """
 
-from backend.agent.builtin_tools import build_rag_answer_tool, current_time
+from backend.agent.builtin_tools import (
+    build_employee_lookup_tool,
+    build_rag_answer_tool,
+    current_time,
+)
 from backend.agent.graph import (
     AGENT_MAIN_TAG,
     AgentState,
@@ -18,6 +22,7 @@ __all__ = [
     "AgentRunner",
     "AgentState",
     "build_agent_graph",
+    "build_employee_lookup_tool",
     "build_initial_messages",
     "build_rag_answer_tool",
     "current_time",

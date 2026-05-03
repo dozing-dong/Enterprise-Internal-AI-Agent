@@ -78,6 +78,37 @@ def normalize_rewritten_question(rewritten_question: str, original_question: str
     return cleaned_question
 
 
+def _expand_retrieval_hints(query: str) -> str:
+    """给跨语言场景补充检索提示词，提升命中英文 policy 文档的概率。"""
+    text = (query or "").strip()
+    if not text:
+        return text
+
+    hints: list[str] = []
+
+    def add_hint(value: str) -> None:
+        if value not in hints:
+            hints.append(value)
+
+    # 中文问法 -> 英文 policy 关键词，主要覆盖“员工出差/报销”场景。
+    if any(token in text for token in ("出差", "差旅", "外地")):
+        add_hint("business travel policy")
+        add_hint("travel request")
+        add_hint("hotel limit")
+    if any(token in text for token in ("报销", "费用", "发票", "reimbursement")):
+        add_hint("expense reimbursement policy")
+        add_hint("reimbursable scope")
+        add_hint("approval rules")
+    if any(token in text for token in ("流程", "审批")):
+        add_hint("approval workflow")
+    if "policy" in text.lower() or "政策" in text:
+        add_hint("company policy")
+
+    if not hints:
+        return text
+    return f"{text} | " + " | ".join(hints)
+
+
 def rewrite_question_for_retrieval(
     question: str,
     rewrite_chain: Callable[[str], str] | None,
@@ -85,7 +116,8 @@ def rewrite_question_for_retrieval(
     """把原问题改写成更适合检索的问题。"""
     # 如果当前没有启用查询改写，就直接返回原问题。
     if rewrite_chain is None:
-        return question
+        return _expand_retrieval_hints(question)
 
     rewritten_question = rewrite_chain(question)
-    return normalize_rewritten_question(rewritten_question, question)
+    normalized = normalize_rewritten_question(rewritten_question, question)
+    return _expand_retrieval_hints(normalized)

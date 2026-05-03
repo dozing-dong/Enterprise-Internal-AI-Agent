@@ -19,17 +19,30 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 
+from backend.config import EMPLOYEE_LOOKUP_TOP_K
 from backend.data.processing import convert_docs_to_sources, format_docs
 from backend.llm import get_chat_model
+from backend.rag.employee_retriever import (
+    EmployeeStore,
+    employee_records_to_documents,
+    safe_search_employees,
+)
 from backend.rag.rerank import Reranker
 from backend.rag.retrievers import SearchRetriever, fuse_retrieval_results
 from backend.rag.rewrite import rewrite_question_for_retrieval
 from backend.storage.history import append_session_messages, read_session_history
+from backend.types import RagDocument
 
 
 GENERATION_SYSTEM_PROMPT = (
     "You are an assistant that answers questions based on retrieval results. "
     "Prefer to rely on the provided knowledge base snippets and the conversation history. "
+    "When a reference snippet describes an employee profile (e.g. starts with "
+    "'Employee E####:' or contains explicit department/title/email fields), "
+    "treat it as authoritative structured data: only use the names, "
+    "departments, titles, and emails that actually appear in the snippets. "
+    "If no employee snippet was retrieved for an employee-related question, "
+    "tell the user the directory has no matching record instead of guessing. "
     "If the reference content is not sufficient to support a conclusion, "
     "clearly say that you do not know and do not fabricate an answer."
 )
@@ -43,6 +56,7 @@ class GraphState(TypedDict, total=False):
     retrieved_docs: list
     vector_docs: list
     keyword_docs: list
+    employee_docs: list
     context: str
     sources: list[dict]
     history: list[dict]
@@ -50,6 +64,29 @@ class GraphState(TypedDict, total=False):
     tool_trace: Annotated[list[dict], operator.add]
     iteration: int
     should_continue: bool
+
+
+def _doc_signature(document: RagDocument) -> tuple[str, str]:
+    """与 retrievers._doc_key 一致的去重键，避免引用循环。"""
+    context_id = str(document.metadata.get("context_id", ""))
+    return context_id, document.page_content
+
+
+def _merge_unique_docs(
+    primary: list[RagDocument],
+    secondary: list[RagDocument],
+) -> list[RagDocument]:
+    """按 ``_doc_signature`` 去重：``primary`` 在前，``secondary`` 在后。"""
+    seen: set[tuple[str, str]] = set()
+    merged: list[RagDocument] = []
+    for source in (primary, secondary):
+        for document in source:
+            key = _doc_signature(document)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(document)
+    return merged
 
 
 def build_rag_graph(
@@ -61,11 +98,17 @@ def build_rag_graph(
     top_k: int,
     reranker: Reranker | None = None,
     rerank_top_k: int | None = None,
+    employee_store: EmployeeStore | None = None,
+    employee_top_k: int = EMPLOYEE_LOOKUP_TOP_K,
 ):
     """构建并编译 RAG LangGraph。
 
     返回的对象同时支持 ``.invoke({...})`` 与 ``.stream/.astream(stream_mode=...)``。
     供 ``RagAnswerTool`` 同步调用、orchestrator 流式调用复用。
+
+    若注入 ``employee_store``，每轮会执行一次结构化员工检索（与向量、
+    关键字检索并行），命中结果被合并进 ``retrieved_docs`` 并在 rerank
+    后强制保留；查不到不影响主流程。
     """
     chat_model = get_chat_model(temperature=0.0)
     graph = StateGraph(GraphState)
@@ -124,14 +167,59 @@ def build_rag_graph(
             ],
         }
 
+    def employee_retrieve(state: GraphState) -> dict:
+        """每轮固定执行的员工结构化检索。
+
+        - ``employee_store`` 未注入时直接返回空，节点保持 no-op。
+        - 任何错误被 ``safe_search_employees`` 吞掉为空结果，避免阻断
+          主链路；查不到也算正常。
+        """
+        if employee_store is None:
+            return {"employee_docs": []}
+
+        original_question = state["question"]
+        retrieval_question = state.get("retrieval_question", original_question)
+
+        # 员工识别优先看用户原问题（通常含“我叫 xxx”），
+        # 若未命中再回退到 rewrite 后的查询。
+        records = safe_search_employees(
+            employee_store,
+            original_question,
+            limit=employee_top_k,
+        )
+        used_query = original_question
+        if not records and retrieval_question != original_question:
+            records = safe_search_employees(
+                employee_store,
+                retrieval_question,
+                limit=employee_top_k,
+            )
+            used_query = retrieval_question
+
+        docs = employee_records_to_documents(records, query=used_query)
+        return {
+            "employee_docs": docs,
+            "tool_trace": [
+                {
+                    "tool": "employee_retrieve",
+                    "input": used_query,
+                    "output_count": len(docs),
+                }
+            ],
+        }
+
     def fuse_docs(state: GraphState) -> dict:
         vector_docs = state.get("vector_docs", [])
         keyword_docs = state.get("keyword_docs", [])
-        docs = fuse_retrieval_results(
+        employee_docs = state.get("employee_docs", [])
+        fused = fuse_retrieval_results(
             vector_docs,
             keyword_docs,
             top_k=top_k,
         )
+        # 员工结构化结果是“必查证据”，强制置顶并去重。
+        # 命中为空时此步等价于 fused 不变，符合“查不到可忽略”的语义。
+        docs = _merge_unique_docs(employee_docs, fused)
         return {
             "retrieved_docs": docs,
             "context": format_docs(docs),
@@ -141,6 +229,7 @@ def build_rag_graph(
                     "tool": "fuse_docs",
                     "input_vector_count": len(vector_docs),
                     "input_keyword_count": len(keyword_docs),
+                    "input_employee_count": len(employee_docs),
                     "output_count": len(docs),
                 }
             ],
@@ -156,15 +245,21 @@ def build_rag_graph(
         retrieval_question = state.get("retrieval_question", state["question"])
         reranked = reranker.invoke(retrieval_question, candidates, final_k)
 
+        # 员工结构化命中视为“必查证据”，rerank 后强制保留并置顶；
+        # 即使其相关性分较低，也不允许被裁剪掉。
+        employee_docs = state.get("employee_docs", [])
+        final_docs = _merge_unique_docs(employee_docs, reranked)
+
         return {
-            "retrieved_docs": reranked,
-            "context": format_docs(reranked),
-            "sources": convert_docs_to_sources(reranked),
+            "retrieved_docs": final_docs,
+            "context": format_docs(final_docs),
+            "sources": convert_docs_to_sources(final_docs),
             "tool_trace": [
                 {
                     "tool": "rerank_docs",
                     "input_count": len(candidates),
-                    "output_count": len(reranked),
+                    "output_count": len(final_docs),
+                    "preserved_employee_count": len(employee_docs),
                 }
             ],
         }
@@ -236,6 +331,7 @@ def build_rag_graph(
     graph.add_node("rewrite_query", rewrite_query)
     graph.add_node("vector_retrieve", vector_retrieve)
     graph.add_node("keyword_retrieve", keyword_retrieve)
+    graph.add_node("employee_retrieve", employee_retrieve)
     graph.add_node("fuse_docs", fuse_docs)
     graph.add_node("rerank_docs", rerank_docs)
     graph.add_node("quality_gate", quality_gate)
@@ -248,8 +344,10 @@ def build_rag_graph(
     graph.add_edge("load_history", "rewrite_query")
     graph.add_edge("rewrite_query", "vector_retrieve")
     graph.add_edge("rewrite_query", "keyword_retrieve")
+    graph.add_edge("rewrite_query", "employee_retrieve")
     graph.add_edge("vector_retrieve", "fuse_docs")
     graph.add_edge("keyword_retrieve", "fuse_docs")
+    graph.add_edge("employee_retrieve", "fuse_docs")
     graph.add_edge("fuse_docs", "rerank_docs")
     graph.add_edge("rerank_docs", "quality_gate")
     graph.add_conditional_edges(

@@ -8,8 +8,17 @@
 
 from typing import Any
 
-from backend.agent import build_agent_graph, build_rag_answer_tool, current_time
+import logging
+
+from backend.agent import (
+    build_agent_graph,
+    build_employee_lookup_tool,
+    build_rag_answer_tool,
+    current_time,
+)
 from backend.config import (
+    EMPLOYEE_RAG_MANDATORY,
+    EMPLOYEE_SEED_ON_STARTUP,
     LANGGRAPH_MAX_ITERATIONS,
     LANGGRAPH_MIN_SOURCES,
     QUERY_REWRITE_ENABLED,
@@ -22,6 +31,7 @@ from backend.config import (
 from backend.data.knowledge_base import build_documents
 from backend.data.processing import split_documents
 from backend.rag.chain import build_rag_graph
+from backend.rag.employee_retriever import EmployeeStore, seed_default_employees
 from backend.rag.rerank import Reranker, build_reranker
 from backend.rag.retrievers import (
     SearchRetriever,
@@ -35,6 +45,9 @@ from backend.rag.retrievers import (
 )
 from backend.rag.rewrite import build_query_rewrite_chain
 from backend.types import RagDocument
+
+
+logger = logging.getLogger(__name__)
 
 
 _UNSET: Any = object()
@@ -128,9 +141,35 @@ def _resolve_retrieval_top_k() -> int:
     return RETRIEVER_TOP_K
 
 
-def build_default_agent_tools(rag_graph: Any) -> list:
-    """构造默认工具集：rag_answer + current_time。"""
-    return [build_rag_answer_tool(rag_graph), current_time]
+def build_default_agent_tools(
+    rag_graph: Any,
+    *,
+    employee_store: EmployeeStore | None = None,
+) -> list:
+    """构造默认工具集：rag_answer + current_time + employee_lookup。"""
+    return [
+        build_rag_answer_tool(rag_graph),
+        build_employee_lookup_tool(employee_store),
+        current_time,
+    ]
+
+
+def _maybe_seed_employee_directory(store: EmployeeStore) -> None:
+    """启动期把 demo 员工写入 PG，便于直接体验。
+
+    任何异常都吞掉，避免 PG 不可用时阻塞主服务启动；上层只把它当成
+    “最尽力”的初始化。
+    """
+    if not EMPLOYEE_SEED_ON_STARTUP:
+        return
+    try:
+        if store.count() > 0:
+            return
+        inserted = seed_default_employees(store)
+        if inserted:
+            logger.info("seeded %s demo employees", inserted)
+    except Exception:
+        logger.exception("employee directory seeding skipped due to error")
 
 
 def create_demo_runtime(
@@ -146,6 +185,7 @@ def create_demo_runtime(
     vector_document_count: int | None = None,
     rag_graph: Any | None = None,
     agent_graph: Any | None = None,
+    employee_store: EmployeeStore | None = None,
 ) -> DemoRuntime:
     """创建在线服务和 CLI 需要的运行时对象。"""
     if documents is None or split_documents_list is None:
@@ -188,6 +228,10 @@ def create_demo_runtime(
     if reranker is _UNSET:
         reranker = build_demo_reranker()
 
+    if employee_store is None:
+        employee_store = EmployeeStore()
+        _maybe_seed_employee_directory(employee_store)
+
     if rag_graph is None:
         rag_graph = build_rag_graph(
             vector_retriever=vector_retriever,
@@ -198,10 +242,13 @@ def create_demo_runtime(
             top_k=retrieval_top_k,
             reranker=reranker,
             rerank_top_k=RERANK_TOP_K if reranker is not None else None,
+            employee_store=employee_store if EMPLOYEE_RAG_MANDATORY else None,
         )
 
     if agent_graph is None:
-        agent_graph = build_agent_graph(build_default_agent_tools(rag_graph))
+        agent_graph = build_agent_graph(
+            build_default_agent_tools(rag_graph, employee_store=employee_store)
+        )
 
     return DemoRuntime(
         documents,

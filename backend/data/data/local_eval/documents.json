@@ -118,5 +118,23 @@
     "title": "Document Archiving and Version Management Standard",
     "document_role": "reference_context",
     "content": "Article 1 Policy documents must include version number, effective date, and publishing department.\nArticle 2 Revised documents must include revision notes with additions, modifications, and deprecated clauses.\nArticle 3 Historical versions must be retained for at least three years for audit purposes.\nArticle 4 Archive directories should be organized by department and topic to ensure traceability and discoverability."
+  },
+  {
+    "context_id": "policy_employee_directory_v1",
+    "title": "Employee Directory Source-of-Truth Policy",
+    "document_role": "reference_context",
+    "content": "Chapter 1 Source of Truth\nArticle 1 The structured employee directory in the rag_employees PostgreSQL table is the single source of truth for employee identity, department, job title, employee_id, and corporate email.\nArticle 2 Free-text policy documents must not contradict the structured directory; when conflict occurs, the structured record wins.\n\nChapter 2 Required Lookup Behavior\nArticle 3 Any question that asks who an employee is, who works in a department, who holds a specific job title, or who to contact must trigger a structured directory lookup before any narrative answer is produced.\nArticle 4 The lookup must perform a case-insensitive substring match across name, department, title, employee_id and email.\n\nChapter 3 Empty-Result Handling\nArticle 5 If the directory returns zero matching records the assistant must clearly tell the user that no matching employee was found and must not invent a name, department, title or email.\nArticle 6 The assistant must not guess an employee's manager, location, or contact details from policy text alone."
+  },
+  {
+    "context_id": "policy_employee_qa_v1",
+    "title": "Employee Question Answering Standard",
+    "document_role": "reference_context",
+    "content": "Chapter 1 Grounding Rules\nArticle 1 When the user asks about an individual employee, the assistant must rely only on records returned from the employee directory and may not synthesize identity fields from prose policies.\nArticle 2 When the user asks who works in a department or which employees hold a job title, the assistant must enumerate exact directory matches and explicitly state the count.\n\nChapter 2 Response Templates\nArticle 3 When at least one record is returned, respond with: name, employee_id, department, title, and email - in that order - for each matching employee.\nArticle 4 When zero records are returned, respond with the fixed phrase 'no matching employee was found in the directory' and offer to refine the search by department or title.\nArticle 5 The assistant must never reveal records that were not returned by the structured lookup, even if they appear in unrelated narrative documents.\n\nChapter 3 Privacy and Compliance\nArticle 6 The assistant must not disclose home address, salary, performance rating, or any field outside the directory schema (employee_id, name, department, title, email).\nArticle 7 Bulk listings of more than ten employees in a single response require an explicit confirmation step from the user."
+  },
+  {
+    "context_id": "policy_org_structure_v1",
+    "title": "Departments and Job Title Taxonomy",
+    "document_role": "reference_context",
+    "content": "Chapter 1 Standard Departments\nArticle 1 The recognised top-level departments in the directory are Engineering, Information Technology, Human Resources, Finance, Sales, Legal, and Administration.\nArticle 2 Department names must be matched case-insensitively; common abbreviations such as 'HR' for 'Human Resources' or 'IT' for 'Information Technology' are accepted as input but normalised to the full form when answering.\n\nChapter 2 Job Title Conventions\nArticle 3 Engineering job titles include Backend Engineer, Frontend Engineer, Senior Backend Engineer, Engineering Manager, and Site Reliability Engineer.\nArticle 4 Human Resources job titles include HR Business Partner, Recruiter, and Compensation Specialist.\nArticle 5 Finance job titles include Finance Lead, Financial Analyst, and Accounts Payable Specialist.\nArticle 6 Sales job titles include Account Executive, Sales Development Representative, and Regional Sales Manager.\n\nChapter 3 Cross-Reference Rules\nArticle 7 When the user mentions a synonym or abbreviation for a department or title, the assistant must attempt the structured lookup with both the synonym and the canonical form before declaring no match."
   }
 ]

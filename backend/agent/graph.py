@@ -37,11 +37,44 @@ from backend.llm import get_chat_model
 AGENT_MAIN_TAG = "agent_main"
 
 
+def _source_key(item: Any) -> tuple:
+    """生成 source 项的去重键。
+
+    优先使用 ``metadata.context_id``（RAG 与 employee_lookup 都会写入该字段），
+    退化到正文 + rank 组合，避免 dict 不可哈希。
+    """
+    if not isinstance(item, dict):
+        return ("__non_dict__", id(item))
+    metadata = item.get("metadata") or {}
+    context_id = ""
+    if isinstance(metadata, dict):
+        context_id = str(metadata.get("context_id", ""))
+    content = str(item.get("content", ""))[:120]
+    rank = item.get("rank")
+    return (context_id, content, rank)
+
+
 def _merge_unique(left: list, right: list) -> list:
-    """LangGraph reducer：保留新值；空 list 时回退到旧值，避免覆盖。"""
-    if right:
-        return list(right)
-    return list(left or [])
+    """LangGraph reducer：按 ``_source_key`` 去重后追加。
+
+    设计目的：
+    - 多工具同轮次写入（``rag_answer`` + ``employee_lookup``）都能保留，
+      不再因为 “right 非空就整体覆盖” 而互相吞掉对方的结果。
+    - 空写入仍然不会清空已有 sources。
+    """
+    if not right:
+        return list(left or [])
+
+    seen: set[tuple] = set()
+    merged: list = []
+    for source in (left or [], right):
+        for item in source:
+            key = _source_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
 
 
 def _keep_latest(left: Any, right: Any) -> Any:

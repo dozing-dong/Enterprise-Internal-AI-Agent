@@ -67,12 +67,24 @@ class _FakeChatModel:
         yield AIMessageChunk(content=msg.content, tool_calls=msg.tool_calls)
 
 
-def _build_runtime(monkeypatch, scripted_messages, *, rag_answer_payload=None):
+def _build_runtime(
+    monkeypatch,
+    scripted_messages,
+    *,
+    rag_answer_payload=None,
+    employee_records=None,
+):
     """构造一个全 fake 的 agent_graph。
 
     rag_answer_payload：当 agent 调用 rag_answer 工具时，rag 子调用返回的结果。
+    employee_records：当 agent 调用 employee_lookup 工具时，fake store 返回的记录。
     """
-    from backend.agent import build_agent_graph, build_rag_answer_tool, current_time
+    from backend.agent import (
+        build_agent_graph,
+        build_employee_lookup_tool,
+        build_rag_answer_tool,
+        current_time,
+    )
 
     fake = _FakeChatModel(scripted_messages)
     monkeypatch.setattr(
@@ -91,8 +103,16 @@ def _build_runtime(monkeypatch, scripted_messages, *, rag_answer_payload=None):
                 "retrieval_question": f"rq:{payload['question']}",
             }
 
+    class _FakeEmployeeStore:
+        def search(self, *_args, **_kwargs):
+            return list(employee_records or [])
+
     rag_graph = _FakeRagGraph()
-    tools = [build_rag_answer_tool(rag_graph), current_time]
+    tools = [
+        build_rag_answer_tool(rag_graph),
+        build_employee_lookup_tool(_FakeEmployeeStore()),
+        current_time,
+    ]
     agent_graph = build_agent_graph(tools)
     return agent_graph
 
@@ -173,6 +193,92 @@ def test_agent_graph_routes_through_rag_answer_tool(monkeypatch):
     # The final assistant message was the model's last reply.
     final_msg = state["messages"][-1]
     assert final_msg.content == "Final answer based on rag."
+
+
+def test_agent_graph_combines_employee_lookup_and_rag(monkeypatch):
+    """模拟 “我叫xxx, 要出差……” 场景：
+    Agent 第 1 步调用 employee_lookup 拿到部门/职位，
+    第 2 步调用 rag_answer 拿到差旅条款，
+    最终 sources 同时包含两类（结构化 + KB），并且 reducer 不会互相覆盖。
+    """
+    from backend.rag.employee_retriever import EmployeeRecord
+
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "tu-emp",
+                    "name": "employee_lookup",
+                    "args": {"query": "alice"},
+                }
+            ],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "tu-rag",
+                    "name": "rag_answer",
+                    "args": {"question": "business travel policy"},
+                }
+            ],
+        ),
+        AIMessage(content="Per directory and policy: ..."),
+    ]
+    agent_graph = _build_runtime(
+        monkeypatch,
+        scripted,
+        rag_answer_payload={
+            "answer": "policy summary",
+            "sources": [
+                {
+                    "rank": 1,
+                    "content": "travel-snippet",
+                    "metadata": {
+                        "source": "local_eval",
+                        "context_id": "policy_travel_v1",
+                        "document_role": "reference_context",
+                    },
+                }
+            ],
+            "retrieval_question": "rewritten:travel",
+        },
+        employee_records=[
+            EmployeeRecord(
+                employee_id="E1001",
+                name="Alice Carter",
+                department="Engineering",
+                title="Senior Backend Engineer",
+                email="alice.carter@example.com",
+            )
+        ],
+    )
+
+    state = agent_graph.invoke(
+        {
+            "messages": [],
+            "session_id": "session-combo",
+            "sources": [],
+            "retrieval_question": None,
+            "original_question": "I'm Alice, what should I watch out for on a trip?",
+        }
+    )
+
+    sources = state["sources"]
+    structured = [
+        s for s in sources
+        if s.get("metadata", {}).get("document_role") == "employee_structured"
+    ]
+    kb = [
+        s for s in sources
+        if s.get("metadata", {}).get("document_role") == "reference_context"
+    ]
+    # 两类 sources 必须并存：结构化 DB 命中 + KB 命中。
+    assert structured, "employee_lookup result must survive in sources"
+    assert kb, "rag_answer result must survive in sources"
+    assert structured[0]["metadata"]["employee_id"] == "E1001"
+    assert kb[0]["metadata"]["context_id"] == "policy_travel_v1"
 
 
 def test_agent_graph_handles_current_time_only(monkeypatch):

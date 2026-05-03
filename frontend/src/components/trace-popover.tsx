@@ -1,4 +1,11 @@
-import { ListTree, AlertCircle, CheckCircle2 } from "lucide-react";
+import {
+  ListTree,
+  AlertCircle,
+  CheckCircle2,
+  Database,
+  BookOpen,
+  Cog,
+} from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -12,6 +19,54 @@ interface TracePopoverProps {
   trace: TraceStep[];
 }
 
+type StepCategory = "structured" | "knowledge" | "other";
+
+interface CategoryStyle {
+  label: string;
+  Icon: typeof Database;
+  badgeClass: string;
+  iconClass: string;
+}
+
+const CATEGORY_STYLES: Record<StepCategory, CategoryStyle> = {
+  structured: {
+    label: "Directory",
+    Icon: Database,
+    badgeClass: "bg-emerald-400/15 text-emerald-200/90",
+    iconClass: "text-emerald-300/85",
+  },
+  knowledge: {
+    label: "RAG",
+    Icon: BookOpen,
+    badgeClass: "bg-sky-400/15 text-sky-200/90",
+    iconClass: "text-sky-300/85",
+  },
+  other: {
+    label: "Other",
+    Icon: Cog,
+    badgeClass: "bg-white/10 text-foreground/75",
+    iconClass: "text-foreground/65",
+  },
+};
+
+const STRUCTURED_STEP_NAMES = new Set(["employee_retrieve", "employee_lookup"]);
+const KNOWLEDGE_STEP_NAMES = new Set([
+  "rag_answer",
+  "rewrite_query",
+  "vector_retrieve",
+  "keyword_retrieve",
+  "fuse_docs",
+  "rerank_docs",
+  "generate_answer",
+  "quality_gate",
+]);
+
+function classify(step: TraceStep): StepCategory {
+  if (STRUCTURED_STEP_NAMES.has(step.name)) return "structured";
+  if (KNOWLEDGE_STEP_NAMES.has(step.name)) return "knowledge";
+  return "other";
+}
+
 function formatLatency(ms: number | null | undefined): string | null {
   if (ms === null || ms === undefined) return null;
   if (ms < 1000) return `${ms} ms`;
@@ -20,6 +75,21 @@ function formatLatency(ms: number | null | undefined): string | null {
 
 export function TracePopover({ trace }: TracePopoverProps) {
   if (!trace || trace.length === 0) return null;
+
+  const counts: Record<StepCategory, number> = {
+    structured: 0,
+    knowledge: 0,
+    other: 0,
+  };
+  const enriched = trace.map((step) => {
+    const category = classify(step);
+    counts[category] += 1;
+    return { step, category };
+  });
+
+  const summaryEntries = (Object.keys(counts) as StepCategory[]).filter(
+    (key) => counts[key] > 0,
+  );
 
   return (
     <Popover>
@@ -46,12 +116,33 @@ export function TracePopover({ trace }: TracePopoverProps) {
               Steps executed by this turn.
             </p>
           </div>
+
+          {summaryEntries.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {summaryEntries.map((category) => {
+                const style = CATEGORY_STYLES[category];
+                const Icon = style.Icon;
+                return (
+                  <span
+                    key={category}
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badgeClass}`}
+                  >
+                    <Icon className="h-2.5 w-2.5" />
+                    {style.label} · {counts[category]}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+
           <ScrollArea className="max-h-[24rem] pr-3">
             <ol className="space-y-2.5">
-              {trace.map((step) => {
+              {enriched.map(({ step, category }) => {
                 const ok = step.ok !== false;
-                const Icon = ok ? CheckCircle2 : AlertCircle;
+                const StatusIcon = ok ? CheckCircle2 : AlertCircle;
                 const latency = formatLatency(step.latency_ms);
+                const style = CATEGORY_STYLES[category];
+                const CategoryIcon = style.Icon;
                 return (
                   <li
                     key={step.step}
@@ -61,7 +152,10 @@ export function TracePopover({ trace }: TracePopoverProps) {
                       <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px] text-white/80">
                         #{step.step}
                       </span>
-                      <Icon
+                      <CategoryIcon
+                        className={`h-3.5 w-3.5 ${style.iconClass}`}
+                      />
+                      <StatusIcon
                         className={
                           "h-3.5 w-3.5 " +
                           (ok ? "text-emerald-400/85" : "text-red-400/85")

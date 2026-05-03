@@ -22,6 +22,13 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
+from backend.data.processing import convert_docs_to_sources
+from backend.rag.employee_retriever import (
+    EmployeeStore,
+    employee_records_to_documents,
+    safe_search_employees,
+)
+
 
 _RAG_ANSWER_DESCRIPTION = (
     "Answer a user question using the enterprise knowledge base. "
@@ -98,6 +105,84 @@ def build_rag_answer_tool(rag_graph: Any):
         )
 
     return rag_answer
+
+
+_EMPLOYEE_LOOKUP_DESCRIPTION = (
+    "Look up employees from the internal employee directory (PostgreSQL). "
+    "Use this tool whenever the user asks who someone is, who works in a "
+    "department, who holds a specific job title, or wants contact details. "
+    "The tool performs a fuzzy match across name, department, title, "
+    "employee_id and email. Optional filters `department` and `title` can "
+    "further narrow the result. The tool returns a JSON object with `ok`, "
+    "`results` (list of employee records) and `count`. An empty `results` "
+    "list means no matching employee was found - in that case do NOT "
+    "fabricate names, departments, or titles."
+)
+
+
+def build_employee_lookup_tool(store: EmployeeStore | None = None):
+    """工厂：把员工存储绑定为 ``employee_lookup`` 工具。
+
+    通过闭包持有 ``store`` 引用，便于测试中注入 fake；默认创建一个
+    ``EmployeeStore``，与生产 PG 共用配置。
+    """
+    bound_store = store if store is not None else EmployeeStore()
+
+    @tool("employee_lookup", description=_EMPLOYEE_LOOKUP_DESCRIPTION)
+    def employee_lookup(
+        query: str,
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        department: str | None = None,
+        title: str | None = None,
+        limit: int = 5,
+    ) -> Command:
+        """Search the employee directory for matching staff.
+
+        Args:
+            query: Free-text keyword. Matches name, department, title,
+                employee_id and email (case-insensitive substring).
+            department: Optional exact-ish department filter.
+            title: Optional exact-ish job-title filter.
+            limit: Maximum number of records to return (1-50).
+        """
+        records = safe_search_employees(
+            bound_store,
+            query,
+            department=department,
+            title=title,
+            limit=limit,
+        )
+
+        observation = json.dumps(
+            {
+                "ok": True,
+                "count": len(records),
+                "results": [record.to_dict() for record in records],
+            },
+            ensure_ascii=False,
+        )
+
+        # 把员工记录以与 RAG sources 同构的形状写回 agent 状态。
+        # 前端按 ``metadata.document_role == 'employee_structured'`` 区分
+        # 出"结构化数据库命中"区块。
+        docs = employee_records_to_documents(records, query=query)
+        structured_sources = convert_docs_to_sources(docs)
+
+        update: dict[str, Any] = {
+            "messages": [
+                ToolMessage(
+                    content=observation,
+                    tool_call_id=tool_call_id,
+                    status="success",
+                )
+            ]
+        }
+        if structured_sources:
+            update["sources"] = structured_sources
+
+        return Command(update=update)
+
+    return employee_lookup
 
 
 @tool("current_time")
