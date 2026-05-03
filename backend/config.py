@@ -29,7 +29,7 @@ RETRIEVER_CANDIDATE_K = int(os.getenv("RETRIEVER_CANDIDATE_K", "20"))
 # 默认启用：若运行环境不支持，可通过环境变量显式关闭。
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
 RERANK_BACKEND = os.getenv("RERANK_BACKEND", "bedrock")
-RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "3"))
+RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "5"))
 BEDROCK_RERANK_MODEL_ID = os.getenv(
     "BEDROCK_RERANK_MODEL_ID",
     "amazon.rerank-v1:0",
@@ -42,18 +42,18 @@ CHUNK_SEPARATORS = ["。", "，", "\n", ""]
 DEFAULT_CHUNK_PROFILE_NAME = "balanced_default"
 CHUNK_PROFILES = {
     "small_dense": {
-        "chunk_size": 80,
-        "chunk_overlap": 20,
+        "chunk_size": 200,
+        "chunk_overlap": 40,
         "description": "Smaller chunks for tighter matching.",
     },
     "balanced_default": {
-        "chunk_size": 120,
-        "chunk_overlap": 30,
+        "chunk_size": 400,
+        "chunk_overlap": 80,
         "description": "Balanced chunking for the default demo flow.",
     },
     "large_context": {
-        "chunk_size": 200,
-        "chunk_overlap": 50,
+        "chunk_size": 600,
+        "chunk_overlap": 120,
         "description": "Larger chunks that preserve more context.",
     },
 }

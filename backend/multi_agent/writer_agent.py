@@ -112,7 +112,7 @@ def build_writer_node():
             f"PolicyAgent summary:\n{policy_text}\n\n"
             f"ExternalContextAgent summary:\n{external_text}\n\n"
             f"Employee directory context:\n{employee_text}\n\n"
-            "Now produce the final user-facing answer following the required structure."
+            "Now produce the final user-facing answer. Only include what is relevant to this specific question."
         )
 
         try:

@@ -410,7 +410,10 @@ class ChatOrchestrator:
                         new_final_answer,
                     ) = _consume_multi_agent_update(payload, collector)
                     if new_sources is not None:
-                        sources = new_sources
+                        # Accumulate sources across all sub-agent updates so
+                        # that employee-directory results (written by supervisor)
+                        # are not overwritten when policy later writes RAG chunks.
+                        sources = _merge_sources(sources, new_sources)
                     if new_invoked:
                         for name in new_invoked:
                             if name and name not in agents_invoked:
@@ -718,6 +721,39 @@ def _record_tool_calls_to_trace(
             last = collector.steps[-1]
             last.ok = False
             last.error = str(error) if error else "tool reported failure"
+
+
+def _merge_sources(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """Accumulate sources from multiple sub-agents without dropping earlier results.
+
+    Uses (context_id, content_prefix) as dedup key so that employee-directory
+    entries written by the supervisor are preserved when the policy node later
+    appends RAG chunks to the same sources channel.
+    """
+    seen: set[tuple] = set()
+    merged: list[dict] = []
+    for item in existing:
+        if not isinstance(item, dict):
+            continue
+        key = _source_dedup_key(item)
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+    for item in incoming:
+        if not isinstance(item, dict):
+            continue
+        key = _source_dedup_key(item)
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
+def _source_dedup_key(item: dict) -> tuple:
+    metadata = item.get("metadata") or {}
+    context_id = str(metadata.get("context_id", "")) if isinstance(metadata, dict) else ""
+    content = str(item.get("content", ""))[:120]
+    return (context_id, content)
 
 
 def _summarize_multi_agent_update(node_name: str, update: dict) -> str | None:

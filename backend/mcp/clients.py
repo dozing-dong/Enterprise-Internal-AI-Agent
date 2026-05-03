@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool
+from langchain_core.tools.base import ToolException
 
 from backend.config import (
     BRAVE_API_KEY,
@@ -119,7 +120,15 @@ def _wrap_async_tool_sync(async_tool: BaseTool) -> StructuredTool:
     args_schema = getattr(async_tool, "args_schema", None)
 
     async def _ainvoke(**kwargs: Any) -> Any:
-        return await async_tool.ainvoke(kwargs)
+        try:
+            return await async_tool.ainvoke(kwargs)
+        except ToolException as exc:
+            # ToolException (e.g. rate limit, MCP server error) is a "soft"
+            # tool error. Return it as a structured result so ToolNode wraps
+            # it in a ToolMessage the agent can read, instead of crashing the
+            # entire subgraph.
+            logger.warning("MCP tool %s returned ToolException: %s", name, exc)
+            return {"ok": False, "error": str(exc)}
 
     def _invoke(**kwargs: Any) -> Any:
         # 在独立线程里跑独立 event loop，无论调用方是否已有 loop 都安全。

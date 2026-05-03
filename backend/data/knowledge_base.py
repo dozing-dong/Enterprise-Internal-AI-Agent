@@ -12,7 +12,12 @@ LOCAL_EVAL_CASES_PATH = LOCAL_EVAL_DIR / "eval_cases.json"
 
 
 def normalize_text(text: str) -> str:
-    return " ".join(text.split()).strip()
+    # Normalize whitespace within each line but preserve line breaks so that
+    # the downstream structure-aware splitter can split on paragraph/article
+    # boundaries rather than falling back to character-level slicing.
+    lines = text.splitlines()
+    normalized_lines = [" ".join(line.split()) for line in lines]
+    return "\n".join(normalized_lines).strip()
 
 
 def read_json_file(file_path: Path) -> list[dict]:
