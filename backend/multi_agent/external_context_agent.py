@@ -105,7 +105,7 @@ def build_external_subgraph(mcp_tools: list[Any] | None):
         ai_msg = chat_model.invoke(messages)
         return {"messages": [ai_msg]}
 
-    tool_node = ToolNode(tools)
+    tool_node = ToolNode(tools, handle_tool_errors=lambda e: f"Tool error: {e}")
 
     def finalize(state: _ExternalSubState) -> dict[str, Any]:
         """把内部 messages 压成 external_result。"""

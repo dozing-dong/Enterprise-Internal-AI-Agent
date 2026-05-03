@@ -119,12 +119,15 @@ MULTI_AGENT_ENABLED = os.getenv("MULTI_AGENT_ENABLED", "true").lower() == "true"
 # 由 supervisor / policy / external / writer 子 Agent 共享的最大 ReAct 步数。
 MULTI_AGENT_RECURSION_LIMIT = int(os.getenv("MULTI_AGENT_RECURSION_LIMIT", "12"))
 
-# Weather MCP server（默认社区开源 stdio server）。
+# Weather MCP server（本项目自写，基于 Open-Meteo 免费 API，全球覆盖无需 API key）。
+# 若需切换回社区 npm server，可在 .env 里覆盖：
+#   MCP_WEATHER_COMMAND=npx
+#   MCP_WEATHER_ARGS=-y @h1deya/mcp-server-weather
 MCP_WEATHER_ENABLED = os.getenv("MCP_WEATHER_ENABLED", "true").lower() == "true"
-MCP_WEATHER_COMMAND = os.getenv("MCP_WEATHER_COMMAND", "npx")
+MCP_WEATHER_COMMAND = os.getenv("MCP_WEATHER_COMMAND", "python")
 MCP_WEATHER_ARGS = os.getenv(
     "MCP_WEATHER_ARGS",
-    "-y @h1deya/mcp-server-weather",
+    "-m backend.mcp_servers.weather_openmeteo",
 )
 
 # Brave Search MCP server。需要 BRAVE_API_KEY 才能成功调用。

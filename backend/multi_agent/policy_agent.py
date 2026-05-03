@@ -94,7 +94,7 @@ def build_policy_subgraph(rag_graph: Any):
         ai_msg = chat_model.invoke(messages)
         return {"messages": [ai_msg]}
 
-    tool_node = ToolNode(tools)
+    tool_node = ToolNode(tools, handle_tool_errors=lambda e: f"Tool error: {e}")
 
     def finalize(state: _PolicySubState) -> dict[str, Any]:
         """把内部对话压成 policy_result，并提取 final answer 字符串。"""
