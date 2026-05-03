@@ -60,7 +60,7 @@ function StructuredEmployeeCard({ source }: { source: SourceItem }) {
   return (
     <li className="rounded-xl border border-emerald-300/20 bg-emerald-400/[0.06] p-3">
       <div className="flex items-center gap-2 text-xs">
-        <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 font-mono text-[10px] text-emerald-200/90">
+        <span className="rounded-full bg-emerald-200 px-2 py-0.5 font-mono text-[10px] text-black">
           #{source.rank}
         </span>
         <span className="font-medium text-foreground/90">{employeeName}</span>
@@ -87,7 +87,7 @@ function KnowledgeSnippetCard({ source }: { source: SourceItem }) {
   return (
     <li className="rounded-xl border border-white/10 bg-white/5 p-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px] text-white/80">
+        <span className="rounded-full bg-gray-200 px-2 py-0.5 font-mono text-[10px] text-black">
           #{source.rank}
         </span>
         {meta ? <span className="truncate">{meta}</span> : null}
@@ -118,7 +118,7 @@ export function SourcesPopover({
           <BookOpen className="h-3.5 w-3.5" />
           {sources.length} {sources.length === 1 ? "source" : "sources"}
           {structured.length > 0 ? (
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-1.5 py-0.5 text-[10px] text-emerald-200/90">
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] text-black">
               <Database className="h-2.5 w-2.5" />
               {structured.length}
             </span>
@@ -146,14 +146,14 @@ export function SourcesPopover({
               {structured.length > 0 ? (
                 <section>
                   <div className="mb-2 flex items-center gap-2">
-                    <Database className="h-3.5 w-3.5 text-emerald-300/85" />
-                    <h5 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-200/90">
+                    <Database className="h-3.5 w-3.5 text-black" />
+                    <h5 className="text-[11px] font-semibold uppercase tracking-wider text-black">
                       Directory matches
                     </h5>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-black">
                       structured PostgreSQL records
                     </span>
-                    <span className="ml-auto text-[10px] text-emerald-200/80">
+                    <span className="ml-auto text-[10px] text-black">
                       {structured.length}
                     </span>
                   </div>
@@ -171,14 +171,14 @@ export function SourcesPopover({
               {knowledge.length > 0 ? (
                 <section>
                   <div className="mb-2 flex items-center gap-2">
-                    <BookOpen className="h-3.5 w-3.5 text-sky-300/85" />
-                    <h5 className="text-[11px] font-semibold uppercase tracking-wider text-sky-200/90">
+                    <BookOpen className="h-3.5 w-3.5 text-black" />
+                    <h5 className="text-[11px] font-semibold uppercase tracking-wider text-black">
                       Knowledge base
                     </h5>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-black">
                       RAG retrieval snippets
                     </span>
-                    <span className="ml-auto text-[10px] text-sky-200/80">
+                    <span className="ml-auto text-[10px] text-black">
                       {knowledge.length}
                     </span>
                   </div>

@@ -32,20 +32,20 @@ const CATEGORY_STYLES: Record<StepCategory, CategoryStyle> = {
   structured: {
     label: "Directory",
     Icon: Database,
-    badgeClass: "bg-emerald-400/15 text-emerald-200/90",
-    iconClass: "text-emerald-300/85",
+    badgeClass: "bg-emerald-200 text-black",
+    iconClass: "text-black",
   },
   knowledge: {
     label: "RAG",
     Icon: BookOpen,
-    badgeClass: "bg-sky-400/15 text-sky-200/90",
-    iconClass: "text-sky-300/85",
+    badgeClass: "bg-sky-200 text-black",
+    iconClass: "text-black",
   },
   other: {
     label: "Other",
     Icon: Cog,
-    badgeClass: "bg-white/10 text-foreground/75",
-    iconClass: "text-foreground/65",
+    badgeClass: "bg-gray-200 text-black",
+    iconClass: "text-black",
   },
 };
 
@@ -149,7 +149,7 @@ export function TracePopover({ trace }: TracePopoverProps) {
                     className="rounded-xl border border-white/10 bg-white/5 p-3"
                   >
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px] text-white/80">
+                      <span className="rounded-full bg-gray-200 px-2 py-0.5 font-mono text-[10px] text-black">
                         #{step.step}
                       </span>
                       <CategoryIcon
