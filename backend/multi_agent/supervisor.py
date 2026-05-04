@@ -1,15 +1,16 @@
-"""SupervisorAgent 节点。
+"""SupervisorAgent node.
 
-职责：
-- 接收用户问题 + 历史，调用一次 LLM（``with_structured_output(Plan)``）
-  产出路由决策。
-- 如果 ``Plan.needs_employee_lookup``，立即用 ``safe_search_employees``
-  做一次员工目录检索（不开 ReAct 循环），把结果写回
-  ``employee_context``。
-- 把 ``"supervisor"`` 追加进 ``agents_invoked``。
+Responsibilities:
+- Receive the user question + history, call the LLM once
+  (``with_structured_output(Plan)``) to produce a routing decision.
+- If ``Plan.needs_employee_lookup`` is true, immediately call
+  ``safe_search_employees`` to look up the employee directory (no ReAct
+  loop), and write the results back to ``employee_context``.
+- Append ``"supervisor"`` to ``agents_invoked``.
 
-Supervisor 只是一个普通 LangGraph 节点函数，不是独立 subgraph。下游
-``Pol`` 与 ``Ext`` 子图通过条件边触发。
+The Supervisor is just a regular LangGraph node function, not a separate
+subgraph. The downstream ``Pol`` and ``Ext`` subgraphs are triggered via
+conditional edges.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 def _serialize_history(history: list[dict]) -> str:
-    """把 session 历史压成短文本，作为 supervisor 决策的辅助上下文。"""
+    """Compress session history into short text for use as supervisor decision context."""
     if not history:
         return "(no prior turns)"
     lines: list[str] = []
@@ -57,7 +58,7 @@ def build_supervisor_node(
     employee_store: EmployeeStore | None,
     employee_top_k: int,
 ):
-    """工厂：返回 supervisor 节点函数（闭包持有 employee_store）。"""
+    """Factory: return the supervisor node function (closes over employee_store)."""
 
     chat_model = get_chat_model(temperature=SUPERVISOR_TEMPERATURE)
     plan_model = chat_model.with_structured_output(Plan)

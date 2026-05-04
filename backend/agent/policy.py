@@ -1,11 +1,11 @@
-"""Agent 决策层的策略配置。
+"""Policy configuration for the agent decision layer.
 
-集中管理：
-- 系统提示词（决定模型如何选择工具与回答风格）。
-- 决策温度。
+Centrally manages:
+- the system prompt (which decides how the model picks tools and the answer style);
+- the decision temperature.
 
-LangGraph 的 ReAct 循环步数由编译图的 ``recursion_limit`` 控制（默认 25），
-不再单独维护 ``AGENT_MAX_STEPS``。
+The number of ReAct loop steps in LangGraph is controlled by the compiled
+graph's ``recursion_limit`` (default 25); ``AGENT_MAX_STEPS`` is no longer maintained.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ AGENT_SYSTEM_PROMPT = (
     "8. Respond in the same language as the user's question."
 )
 
-# 决策层调用 LLM 的温度；保持 0.0 便于复现。
+# Temperature for the decision-layer LLM call; kept at 0.0 for reproducibility.
 AGENT_PLANNER_TEMPERATURE = float(
     os.getenv("AGENT_PLANNER_TEMPERATURE", "0.0")
 )

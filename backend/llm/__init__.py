@@ -1,12 +1,13 @@
-"""LLM 接入层。
+"""LLM integration layer.
 
-把所有底层 Bedrock 调用集中到本包：
-- ``bedrock``：boto3 客户端、embedding、rerank 等不属于 chat 模型范畴的 API。
-- ``chat_models``：基于 ``langchain-aws.ChatBedrockConverse`` 的 chat 模型工厂，
-  供 RAG / Agent 各自的 LangGraph 节点使用。
+Centralizes all low-level Bedrock calls in this package:
+- ``bedrock``: boto3 client, embedding, rerank, and other non-chat APIs.
+- ``chat_models``: chat-model factory based on
+  ``langchain-aws.ChatBedrockConverse``, used by the LangGraph nodes of
+  RAG / Agent.
 
-目的是让 ``backend.rag`` 与 ``backend.agent`` 都仅依赖 ``backend.llm``，
-而不互相耦合。
+The goal is to let ``backend.rag`` and ``backend.agent`` depend only on
+``backend.llm`` instead of on each other.
 """
 
 from backend.llm.bedrock import (

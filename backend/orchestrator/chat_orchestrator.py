@@ -1,15 +1,19 @@
-"""Controller 下层编排：单一 stream() + aggregate()，全 LangGraph + 全流式。
+"""Lower-level controller orchestration: a single stream() + aggregate(), all LangGraph and all streaming.
 
-设计要点：
-- ``stream(...)``：按 mode 选择 RAG / Agent 编译图，统一驱动
-  ``graph.stream(stream_mode=["messages","updates"])``：
-  - ``messages`` 流：只转发"用户可见"模型节点的文本 chunk（按 tag 过滤），
-    避免 Agent 调 RAG 工具时 RAG 内部的 ``generate_answer`` 也被双发。
-  - ``updates`` 流：用 ``TraceCollector`` 累积统一 trace；如果某节点写入
-    ``sources`` / ``retrieval_question``，立即下发一次 ``sources`` 事件。
-- 末尾负责 ``touch_session`` / 首回合标题生成 / 下发 ``done``。
-- ``aggregate(...)``：``POST /chat`` 用，内部直接消费 ``stream``，把 token 拼成
-  完整 ``answer``，返回 ``ChatResponse``。
+Design notes:
+- ``stream(...)``: select the RAG / Agent compiled graph by mode and
+  uniformly drive ``graph.stream(stream_mode=["messages","updates"])``:
+  - ``messages`` stream: forwards only text chunks from "user-visible"
+    model nodes (filtered by tag) so RAG's internal ``generate_answer``
+    is not double-emitted when the Agent calls the RAG tool.
+  - ``updates`` stream: accumulates the unified trace via
+    ``TraceCollector``; whenever a node writes ``sources`` /
+    ``retrieval_question``, immediately emits one ``sources`` event.
+- At the end, runs ``touch_session`` / first-turn title generation /
+  emits ``done``.
+- ``aggregate(...)``: used by ``POST /chat``; consumes ``stream``
+  internally, joins tokens into a complete ``answer``, and returns
+  ``ChatResponse``.
 """
 
 from __future__ import annotations
@@ -49,12 +53,14 @@ from backend.storage.sessions import (
 )
 
 
-# RAG 节点中 "用户可见" 的最终生成节点名。orchestrator 只把该节点的
-# token 转给前端，避免 Agent 调 RAG 工具时把 RAG 内部生成也下发。
+# Name of the "user-visible" final generation node in RAG. The orchestrator
+# only forwards tokens from this node, so when an Agent calls the RAG tool,
+# RAG's internal generation is not also pushed to the frontend.
 _RAG_FINAL_NODE_NAME = "generate_answer"
 
-# multi_agent 拓扑里：父图节点名 → 它属于哪个 sub-agent，便于把节点
-# 内部产生的 messages / tool_trace 标记成对应的 trace.agent 字段。
+# In the multi_agent topology: parent-graph node name -> the sub-agent it
+# belongs to, so messages / tool_trace produced inside a node can be tagged
+# with the corresponding ``trace.agent`` field.
 _MULTI_AGENT_NODE_TO_AGENT: dict[str, str] = {
     "supervisor": AGENT_NAME_SUPERVISOR,
     "policy": AGENT_NAME_POLICY,
@@ -69,7 +75,7 @@ class OrchestratorStreamEvent(NamedTuple):
 
 
 class ChatOrchestrator:
-    """统一 RAG / Agent 两种模式的流式入口。"""
+    """Unified streaming entry point for the RAG / Agent modes."""
 
     def __init__(self, runtime: DemoRuntime) -> None:
         self._runtime = runtime
@@ -83,7 +89,7 @@ class ChatOrchestrator:
         session_record_title: str,
         is_first_turn: bool,
     ) -> Iterator[OrchestratorStreamEvent]:
-        """按 mode 选择图并驱动流式输出。"""
+        """Pick the graph by mode and drive streaming output."""
         if request.mode == "agent":
             yield from self._stream_agent(
                 request,
@@ -106,13 +112,14 @@ class ChatOrchestrator:
     # ---- aggregate (POST /chat) -----------------------------------------
 
     def aggregate(self, request: ChatRequest) -> ChatResponse:
-        """非流式入口：消费一次 stream，把结果聚合成 ChatResponse。"""
+        """Non-streaming entry: consumes a stream once and aggregates the result into a ChatResponse."""
         stream_request = ChatStreamRequest(
             question=request.question,
             session_id=request.session_id,
             mode=request.mode,
         )
-        # session 元数据 / 首回合判断由 stream 入口同样需要，统一在这里准备。
+        # Session metadata / first-turn detection are needed by the stream
+        # entry point too; prepare them uniformly here.
         session_record = create_session_if_missing(request.session_id)
         existing_history = read_session_history(request.session_id)
         is_first_turn = len(existing_history) == 0
@@ -150,7 +157,7 @@ class ChatOrchestrator:
 
         if error:
             raise RagException(
-                f"{request.mode.upper()} 执行时发生内部错误：{error}",
+                f"Internal error during {request.mode.upper()} execution: {error}",
                 status_code=500,
             )
 
@@ -181,7 +188,7 @@ class ChatOrchestrator:
         graph = self._runtime.rag_graph
         if graph is None:
             yield OrchestratorStreamEvent(
-                "error", {"detail": "RAG graph 未初始化。"}
+                "error", {"detail": "RAG graph is not initialized."}
             )
             return
 
@@ -263,7 +270,7 @@ class ChatOrchestrator:
         graph = self._runtime.agent_graph
         if graph is None:
             yield OrchestratorStreamEvent(
-                "error", {"detail": "Agent graph 未初始化。"}
+                "error", {"detail": "Agent graph is not initialized."}
             )
             return
 
@@ -368,7 +375,7 @@ class ChatOrchestrator:
         graph = self._runtime.multi_agent_graph
         if graph is None:
             yield OrchestratorStreamEvent(
-                "error", {"detail": "Multi-Agent graph 未初始化。"}
+                "error", {"detail": "Multi-Agent graph is not initialized."}
             )
             return
 
@@ -377,9 +384,9 @@ class ChatOrchestrator:
         sources: list[dict] = []
         agents_invoked: list[str] = []
         last_sources_signature: int | None = None
-        # Writer 通过 state.final_answer 写回最终答复；当 messages 流没产生
-        # 任何 chunk（例如 fake model 测试 / 模型未真正流式）时，用这个
-        # fallback 作为 full_answer。
+        # The Writer writes the final answer back via state.final_answer;
+        # when the messages stream produces no chunks (e.g. a fake-model
+        # test or the model did not actually stream), use this fallback as full_answer.
         final_answer_from_state: str = ""
 
         history = read_session_history(request.session_id)
@@ -511,11 +518,11 @@ def _extract_user_visible_text(
     allowed_node: str | None = None,
     allowed_tag: str | None = None,
 ) -> str:
-    """从 LangGraph ``messages`` 模式的 chunk 中抽出可见文本。
+    """Extract visible text from a chunk on LangGraph's ``messages`` stream.
 
-    ``payload`` 为 ``(message_chunk, metadata)`` 元组。按 ``allowed_node`` 或
-    ``allowed_tag`` 过滤来源，避免子图（例如 RAG-as-tool）的内部生成被
-    转发给前端。
+    ``payload`` is a ``(message_chunk, metadata)`` tuple. Filter by
+    ``allowed_node`` or ``allowed_tag`` to avoid forwarding the internal
+    generation of subgraphs (e.g. RAG-as-tool) to the frontend.
     """
     if not isinstance(payload, tuple) or len(payload) != 2:
         return ""
@@ -540,7 +547,7 @@ def _flatten_message_text(content: Any) -> str:
         parts: list[str] = []
         for block in content:
             if isinstance(block, dict):
-                # ChatBedrockConverse 流式 chunk 形如 {"type":"text","text":"..."}
+                # ChatBedrockConverse streaming chunks look like {"type":"text","text":"..."}.
                 if block.get("type") == "text" and isinstance(block.get("text"), str):
                     parts.append(block["text"])
             elif isinstance(block, str):
@@ -553,7 +560,7 @@ def _consume_update(
     payload: Any,
     collector: TraceCollector,
 ) -> tuple[list[dict] | None, str | None]:
-    """RAG ``updates`` 流：累积 trace，并把 sources/retrieval_question 透传出去。"""
+    """RAG ``updates`` stream: accumulate trace and pass through sources/retrieval_question."""
     if not isinstance(payload, dict):
         return None, None
 
@@ -576,7 +583,7 @@ def _consume_agent_update(
     payload: Any,
     collector: TraceCollector,
 ) -> tuple[list[dict] | None, str | None]:
-    """Agent ``updates`` 流：把 messages 喂给 collector，提取 sources/retrieval_question。"""
+    """Agent ``updates`` stream: feed messages to the collector and extract sources/retrieval_question."""
     if not isinstance(payload, dict):
         return None, None
 
@@ -601,12 +608,14 @@ def _consume_multi_agent_update(
     payload: Any,
     collector: TraceCollector,
 ) -> tuple[list[dict] | None, list[str], str | None]:
-    """Multi-Agent ``updates`` 流：
+    """Multi-Agent ``updates`` stream:
 
-    - 把每个 sub-agent 节点的 ``agents_invoked`` / ``sources`` 提取出来；
-    - 给 trace collector 推一条 node 级 step（带 ``agent`` 标记）；
-    - 把 writer 节点写回的 ``final_answer`` 抽出，作为 token 流为空时的兜底。
-    - 不提取 ``retrieval_question``：multi_agent 不暴露 RAG 改写后的 query。
+    - Extract ``agents_invoked`` / ``sources`` for each sub-agent node;
+    - Push a node-level step (with ``agent`` tag) to the trace collector;
+    - Extract the ``final_answer`` written back by the writer node, used
+      as a fallback when the token stream is empty.
+    - Does NOT extract ``retrieval_question``: multi_agent does not expose
+      RAG's rewritten query.
     """
     if not isinstance(payload, dict):
         return None, [], None
@@ -639,10 +648,11 @@ def _consume_multi_agent_update(
         ):
             new_final_answer = update["final_answer"]
 
-        # 把 sub-agent 内部 ReAct 的 tool 调用展开成 trace step，每条带
-        # 上 ``agent`` 标记，方便前端按 sub-agent 维度展示。子图本身在父
-        # 图 updates 里只暴露 policy_result / external_result，不会暴露
-        # inner messages 列表，所以这里从 result.tool_calls 派生。
+        # Expand the sub-agent's internal ReAct tool calls into trace
+        # steps, each tagged with ``agent`` so the frontend can display
+        # them grouped by sub-agent. The subgraph itself only exposes
+        # policy_result / external_result on the parent updates stream
+        # (no inner messages), so we derive from result.tool_calls.
         for inner_calls in _iter_inner_tool_calls(update):
             _record_tool_calls_to_trace(collector, inner_calls, agent=sub_agent)
 
@@ -658,10 +668,10 @@ def _consume_multi_agent_update(
 
 
 def _iter_inner_tool_calls(update: dict) -> Iterator[list[dict]]:
-    """从父图节点 update 里抽出 sub-agent 自报的 tool_calls 列表。
+    """Pull a sub-agent's self-reported tool_calls list out of a parent-graph node update.
 
-    ``policy_result.tool_calls`` 与 ``external_result.tool_calls`` 都用同一
-    种 dict 形态：``{name, args, id, ok, result, error?}``。
+    ``policy_result.tool_calls`` and ``external_result.tool_calls`` use
+    the same dict shape: ``{name, args, id, ok, result, error?}``.
     """
     for key in ("policy_result", "external_result"):
         result = update.get(key)
@@ -678,7 +688,7 @@ def _record_tool_calls_to_trace(
     *,
     agent: str | None,
 ) -> None:
-    """把 sub-agent 暴露的 tool_calls 列表挨个登记成 trace step。"""
+    """Register each entry in a sub-agent's tool_calls list as a trace step."""
     for call in calls:
         if not isinstance(call, dict):
             continue
@@ -698,7 +708,7 @@ def _record_tool_calls_to_trace(
             except (TypeError, ValueError):
                 output_summary = str(result)
             if output_summary and len(output_summary) > 160:
-                output_summary = output_summary[:159].rstrip() + "…"
+                output_summary = output_summary[:159].rstrip() + "\u2026"
 
         try:
             input_summary: str | None = (
@@ -707,16 +717,16 @@ def _record_tool_calls_to_trace(
         except (TypeError, ValueError):
             input_summary = str(args) if args else None
         if input_summary and len(input_summary) > 160:
-            input_summary = input_summary[:159].rstrip() + "…"
+            input_summary = input_summary[:159].rstrip() + "\u2026"
 
-        # 直接走低阶 add_node_step 简化路径：name=tool 名，agent=归属 sub-agent。
+        # Use the low-level add_node_step path: name=tool name, agent=owning sub-agent.
         collector.add_node_step(
             name=name,
             agent=agent,
             input_summary=input_summary,
             output_summary=output_summary,
         )
-        # ok=False 的工具调用：把最后一个 step 标记为失败。
+        # ok=False tool call: mark the last step as failed.
         if not ok and collector.steps:
             last = collector.steps[-1]
             last.ok = False
@@ -757,7 +767,7 @@ def _source_dedup_key(item: dict) -> tuple:
 
 
 def _summarize_multi_agent_update(node_name: str, update: dict) -> str | None:
-    """为 multi_agent 的每个父图节点产出一条简短输出摘要。"""
+    """Produce a brief output summary for each parent-graph node in multi_agent mode."""
     if node_name == "supervisor":
         plan = update.get("plan")
         if plan is None:

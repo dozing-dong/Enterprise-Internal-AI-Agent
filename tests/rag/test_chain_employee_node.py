@@ -1,9 +1,11 @@
-"""验证 RAG chain 中 ``employee_retrieve`` 必查节点的语义。
+"""Verify the semantics of the always-run ``employee_retrieve`` node in the RAG chain.
 
-策略：
-- 不接 Bedrock / 真实 PG：用 fake retrievers + fake EmployeeStore + fake
-  ChatModel 装配 ``build_rag_graph``，直接 ``invoke`` 一次完整流水线，
-  断言 ``retrieved_docs`` 中包含员工结构化条目，且查不到时主流程不挂。
+Strategy:
+- No Bedrock / real Postgres: assemble ``build_rag_graph`` with fake
+  retrievers, a fake EmployeeStore and a fake ChatModel, then ``invoke``
+  the full pipeline once and assert that ``retrieved_docs`` contains the
+  structured employee entries, and that the main flow still works when
+  there are no employee hits.
 """
 
 from __future__ import annotations
@@ -90,7 +92,8 @@ def test_employee_node_injects_records_into_retrieved_docs(monkeypatch):
     )
     state = graph.invoke({"question": "who is Alice", "session_id": "s-emp-1"})
     sources = state["sources"]
-    # 至少一条 sources 来自员工结构化命中（document_role 标记）。
+    # At least one source must come from the structured employee hit
+    # (marked by document_role).
     employee_sources = [
         s for s in sources if s["metadata"].get("document_role") == "employee_structured"
     ]
@@ -99,7 +102,7 @@ def test_employee_node_injects_records_into_retrieved_docs(monkeypatch):
 
 
 def test_employee_node_no_match_does_not_break_main_flow(monkeypatch):
-    """员工查不到时，主流程不报错且沿用普通检索结果。"""
+    """When no employee is found, the main flow must not error and must keep using the regular retrieval results."""
     vector_docs = [
         RagDocument(
             page_content="kb only",
@@ -114,7 +117,8 @@ def test_employee_node_no_match_does_not_break_main_flow(monkeypatch):
     )
     state = graph.invoke({"question": "policy on overtime", "session_id": "s-emp-2"})
     sources = state["sources"]
-    # 不应该有员工 source，但流水线必须正常完成并返回 vector_docs 里的内容。
+    # There must be no employee sources, but the pipeline must complete
+    # normally and return content from vector_docs.
     assert all(
         s["metadata"].get("document_role") != "employee_structured" for s in sources
     )

@@ -1,4 +1,4 @@
-"""兼容旧入口名，默认转发到 FastAPI 启动。"""
+"""Legacy entry point name kept for compatibility; forwards to FastAPI startup."""
 
 from run_api import start_api
 

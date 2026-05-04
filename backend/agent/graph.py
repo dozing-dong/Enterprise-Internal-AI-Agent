@@ -1,17 +1,21 @@
-"""Agent LangGraph：标准 ReAct 循环（agent ⇄ tools），全流式。
+"""Agent LangGraph: standard ReAct loop (agent <-> tools), fully streaming.
 
-设计要点：
-- 节点 ``agent``：调用 ``ChatBedrockConverse.bind_tools(...)``。在
-  ``stream_mode=["messages","updates"]`` 下，``invoke`` 内部的流式 token
-  会自动以 ``AIMessageChunk`` 形式被 ``messages`` 流捕获。
-- 节点 ``tools``：``langgraph.prebuilt.ToolNode``，自动按
-  ``AIMessage.tool_calls`` 路由到对应的 ``@tool``，支持 ``Command`` 返回值
-  把 ``sources`` 等业务字段写回 state。
-- 工具执行结束自动回到 ``agent`` 节点；``tools_condition`` 在没有更多
-  ``tool_calls`` 时直接结束，由模型本轮的 AIMessage 作为最终答案。
-- agent 内部 LLM 调用用 ``with_config(tags=["agent_main"])`` 打 tag，
-  便于 orchestrator 在流式过滤中只转发 "用户可见" 的最终答复，避免
-  RAG-as-tool 子调用的内部生成被双重下发。
+Design notes:
+- Node ``agent``: invokes ``ChatBedrockConverse.bind_tools(...)``. Under
+  ``stream_mode=["messages","updates"]``, the streaming tokens produced
+  inside ``invoke`` are automatically captured by the ``messages`` stream
+  as ``AIMessageChunk`` objects.
+- Node ``tools``: ``langgraph.prebuilt.ToolNode`` automatically routes
+  to the matching ``@tool`` based on ``AIMessage.tool_calls`` and supports
+  ``Command`` return values that write business fields like ``sources``
+  back into the state.
+- After tool execution, control returns to the ``agent`` node automatically;
+  ``tools_condition`` ends the run when there are no more ``tool_calls``,
+  using the model's current AIMessage as the final answer.
+- The agent's internal LLM call is tagged with
+  ``with_config(tags=["agent_main"])`` so the orchestrator's streaming
+  filter forwards only the user-visible final response and avoids
+  double-emitting the internal generation of RAG-as-tool sub-calls.
 """
 
 from __future__ import annotations
@@ -38,10 +42,11 @@ AGENT_MAIN_TAG = "agent_main"
 
 
 def _source_key(item: Any) -> tuple:
-    """生成 source 项的去重键。
+    """Generate a deduplication key for a source item.
 
-    优先使用 ``metadata.context_id``（RAG 与 employee_lookup 都会写入该字段），
-    退化到正文 + rank 组合，避免 dict 不可哈希。
+    Prefers ``metadata.context_id`` (written by both RAG and
+    employee_lookup); falls back to a content + rank tuple to avoid
+    relying on dict hashability.
     """
     if not isinstance(item, dict):
         return ("__non_dict__", id(item))
@@ -55,12 +60,13 @@ def _source_key(item: Any) -> tuple:
 
 
 def _merge_unique(left: list, right: list) -> list:
-    """LangGraph reducer：按 ``_source_key`` 去重后追加。
+    """LangGraph reducer: append after deduplication via ``_source_key``.
 
-    设计目的：
-    - 多工具同轮次写入（``rag_answer`` + ``employee_lookup``）都能保留，
-      不再因为 “right 非空就整体覆盖” 而互相吞掉对方的结果。
-    - 空写入仍然不会清空已有 sources。
+    Design goals:
+    - Keep results from multiple tools in the same turn (``rag_answer`` +
+      ``employee_lookup``) instead of overwriting one another whenever
+      ``right`` is non-empty.
+    - Empty writes still do not clear existing sources.
     """
     if not right:
         return list(left or [])
@@ -78,7 +84,7 @@ def _merge_unique(left: list, right: list) -> list:
 
 
 def _keep_latest(left: Any, right: Any) -> Any:
-    """LangGraph reducer：用新值覆盖旧值（None / 空字符串也允许覆盖）。"""
+    """LangGraph reducer: overwrite the old value with the new one (None / empty allowed)."""
     return right if right is not None else left
 
 
@@ -96,9 +102,10 @@ def build_agent_graph(
     system_prompt: str = AGENT_SYSTEM_PROMPT,
     temperature: float = AGENT_PLANNER_TEMPERATURE,
 ):
-    """构建并编译 Agent ReAct LangGraph。
+    """Build and compile the agent ReAct LangGraph.
 
-    ``tools`` 必须是已经构造好的 LangChain Tool 列表（含 ``rag_answer`` 等）。
+    ``tools`` must be a list of already-built LangChain Tools (including
+    ``rag_answer``).
     """
     chat_model = (
         get_chat_model(temperature=temperature)
@@ -131,7 +138,7 @@ def build_initial_messages(
     history: Sequence[dict],
     question: str,
 ) -> list[BaseMessage]:
-    """把历史 + 当前用户问题转成 LangChain BaseMessage 列表。"""
+    """Convert history + the current user question into a list of LangChain BaseMessages."""
     messages: list[BaseMessage] = []
     for item in history:
         role = item.get("role")

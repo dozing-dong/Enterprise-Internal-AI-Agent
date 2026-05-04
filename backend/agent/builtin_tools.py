@@ -1,13 +1,14 @@
-"""内置 Agent 工具。
+"""Built-in agent tools.
 
-- ``build_rag_answer_tool(rag_graph)``：把编译好的 RAG LangGraph 包装成一个
-  LangChain ``@tool``。该工具在被调用时同步 ``rag_graph.invoke(...)``，
-  并通过 ``Command`` 把检索到的 ``sources`` 与 ``retrieval_question``
-  写回 agent 状态，供 orchestrator 在最终 ``done`` 事件里下发给前端。
-- ``current_time``：极简工具，演示多工具路由能力。
+- ``build_rag_answer_tool(rag_graph)``: wrap the compiled RAG LangGraph
+  into a LangChain ``@tool``. When called, it synchronously invokes
+  ``rag_graph.invoke(...)`` and uses ``Command`` to write the retrieved
+  ``sources`` and ``retrieval_question`` back into the agent state, so the
+  orchestrator can emit them in the final ``done`` event to the frontend.
+- ``current_time``: a minimal tool demonstrating multi-tool routing.
 
-session_id 通过 ``InjectedState`` 从 agent 图状态注入，工具签名保持
-干净（只暴露给 LLM 真正可控的参数）。
+session_id is injected from the agent graph state via ``InjectedState`` so
+the tool signature stays clean (only parameters the LLM truly controls are exposed).
 """
 
 from __future__ import annotations
@@ -42,11 +43,11 @@ _RAG_ANSWER_DESCRIPTION = (
 
 
 def build_rag_answer_tool(rag_graph: Any):
-    """工厂：把已编译的 RAG 图绑定为一个 LangChain ``@tool``。
+    """Factory: bind the compiled RAG graph as a LangChain ``@tool``.
 
-    通过闭包持有 ``rag_graph``，避免把 graph 写到全局；
-    同时让 ``rag_answer`` 的工具签名只暴露 ``question``，符合
-    Bedrock Converse 的工具协议。
+    Holds ``rag_graph`` via closure to avoid making it a global; also keeps
+    the ``rag_answer`` tool signature down to a single ``question`` parameter,
+    in line with the Bedrock Converse tool protocol.
     """
 
     @tool("rag_answer", description=_RAG_ANSWER_DESCRIPTION)
@@ -121,10 +122,10 @@ _EMPLOYEE_LOOKUP_DESCRIPTION = (
 
 
 def build_employee_lookup_tool(store: EmployeeStore | None = None):
-    """工厂：把员工存储绑定为 ``employee_lookup`` 工具。
+    """Factory: bind the employee store to the ``employee_lookup`` tool.
 
-    通过闭包持有 ``store`` 引用，便于测试中注入 fake；默认创建一个
-    ``EmployeeStore``，与生产 PG 共用配置。
+    Holds ``store`` via closure so tests can inject a fake; defaults to a
+    new ``EmployeeStore`` sharing the production PG configuration.
     """
     bound_store = store if store is not None else EmployeeStore()
 
@@ -162,9 +163,9 @@ def build_employee_lookup_tool(store: EmployeeStore | None = None):
             ensure_ascii=False,
         )
 
-        # 把员工记录以与 RAG sources 同构的形状写回 agent 状态。
-        # 前端按 ``metadata.document_role == 'employee_structured'`` 区分
-        # 出"结构化数据库命中"区块。
+        # Write employee records back into agent state in the same shape
+        # as RAG sources. The frontend distinguishes "structured database
+        # hit" sections by ``metadata.document_role == 'employee_structured'``.
         docs = employee_records_to_documents(records, query=query)
         structured_sources = convert_docs_to_sources(docs)
 

@@ -1,10 +1,11 @@
-"""底层 Bedrock 调用封装。
+"""Low-level Bedrock call wrappers.
 
-只负责两件事：
-- 创建并缓存 boto3 client（chat / agent runtime 各一个连接池）。
-- 提供 ``embed_texts`` / ``bedrock_rerank`` 两个非 chat 类的纯 API 调用。
+Responsible for two things only:
+- Create and cache boto3 clients (one connection pool each for chat / agent runtime).
+- Provide ``embed_texts`` / ``bedrock_rerank``: pure non-chat API calls.
 
-chat 与工具调用一律走 ``chat_models.get_chat_model``，本模块不再封装。
+Chat and tool-calling go exclusively through ``chat_models.get_chat_model``;
+this module no longer wraps them.
 """
 
 from __future__ import annotations
@@ -22,14 +23,15 @@ from backend.config import (
 
 @lru_cache(maxsize=1)
 def _get_bedrock_client():
-    """创建 Bedrock Runtime 客户端。
+    """Create a Bedrock Runtime client.
 
-    使用 lru_cache 复用底层 boto3 client（连接池、签名器开销较高）。
+    Uses lru_cache to reuse the underlying boto3 client (the connection
+    pool and signer are expensive to recreate).
     """
     try:
         import boto3
     except ImportError as exc:
-        raise ImportError("缺少 boto3 依赖，无法使用 Bedrock。") from exc
+        raise ImportError("boto3 is required to use Bedrock.") from exc
 
     return boto3.client(
         "bedrock-runtime",
@@ -39,16 +41,17 @@ def _get_bedrock_client():
 
 @lru_cache(maxsize=1)
 def _get_bedrock_agent_runtime_client():
-    """创建 Bedrock Agent Runtime 客户端。
+    """Create a Bedrock Agent Runtime client.
 
-    Bedrock Rerank API 走的是 bedrock-agent-runtime，
-    与 embedding 用的 bedrock-runtime 不是同一个 service。
-    单独缓存以便在 rerank 不可用 region 时通过 BEDROCK_RERANK_REGION 切换。
+    The Bedrock Rerank API uses bedrock-agent-runtime, which is a separate
+    service from the bedrock-runtime used for embedding. Cached separately
+    so it can be switched via BEDROCK_RERANK_REGION when rerank is not
+    available in the primary region.
     """
     try:
         import boto3
     except ImportError as exc:
-        raise ImportError("缺少 boto3 依赖，无法使用 Bedrock。") from exc
+        raise ImportError("boto3 is required to use Bedrock.") from exc
 
     return boto3.client(
         "bedrock-agent-runtime",
@@ -57,7 +60,7 @@ def _get_bedrock_agent_runtime_client():
 
 
 def reset_bedrock_client() -> None:
-    """显式释放 Bedrock 客户端缓存，下次调用时重新创建。"""
+    """Explicitly drop cached Bedrock clients so the next call rebuilds them."""
     _get_bedrock_client.cache_clear()
     _get_bedrock_agent_runtime_client.cache_clear()
 
@@ -69,10 +72,11 @@ def bedrock_rerank(
     model_id: str,
     top_k: int,
 ) -> list[tuple[int, float]]:
-    """调用 Bedrock Agent Runtime 的 Rerank API。
+    """Call the Rerank API on Bedrock Agent Runtime.
 
-    返回 [(原始索引, 相关度分数), ...]，按分数降序，长度 <= top_k。
-    任何异常都向上抛出，由调用方决定降级策略。
+    Returns [(original_index, relevance_score), ...] sorted descending by
+    score, with length <= top_k. Any exception is propagated to the
+    caller, which decides on a degradation strategy.
     """
     if not documents:
         return []
@@ -121,7 +125,7 @@ def bedrock_rerank(
 
 
 def embed_texts(texts: Sequence[str]) -> list[list[float]]:
-    """调用 Bedrock embedding 模型生成向量。"""
+    """Call the Bedrock embedding model to generate vectors."""
     client = _get_bedrock_client()
     embeddings: list[list[float]] = []
 
@@ -135,7 +139,7 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
         payload = json.loads(response["body"].read())
         vector = payload.get("embedding")
         if not isinstance(vector, list):
-            raise ValueError("embedding 响应格式异常。")
+            raise ValueError("Unexpected embedding response format.")
         embeddings.append([float(value) for value in vector])
 
     return embeddings

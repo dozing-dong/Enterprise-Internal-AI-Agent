@@ -1,20 +1,23 @@
-"""Multi-Agent 端到端 smoke test。
+"""Multi-Agent end-to-end smoke test.
 
-策略（minimal smoke，按计划 Q12-A）：
-- monkeypatch ``backend.llm.chat_models.get_chat_model``，让 supervisor /
-  policy / external / writer 各自看到的 LLM 都是 ``_FakeChatModel``，按
-  脚本逐次返回 ``AIMessage``。Supervisor 的 ``with_structured_output(Plan)``
-  路径返回一个固定 ``Plan``。
-- 不真起 stdio MCP server；用一个本地 ``@tool`` 模拟天气查询，作为
-  ``mcp_tools`` 注入 ExternalContextAgent。
-- 用 ``MemoryHistoryStore`` 隔离历史副作用。
-- 通过 ``ChatOrchestrator._stream_multi_agent`` 驱动一次完整对话，验证：
-  1. supervisor / policy / external / writer 都进入 ``agents_invoked``，
-     且按预期顺序。
-  2. 仅 WriterAgent 的 token 出现在 ``token`` 事件里；policy / external
-     的 LLM 输出不会被下发。
-  3. ``done`` 事件 ``mode == "multi_agent"`` 且 ``agents_invoked`` 完整。
-  4. ``trace`` 里同时存在 supervisor 节点 step 与 policy 子图工具调用 step。
+Strategy (minimal smoke, plan Q12-A):
+- monkeypatch ``backend.llm.chat_models.get_chat_model`` so that supervisor /
+  policy / external / writer each see a ``_FakeChatModel`` and return
+  ``AIMessage`` according to a per-agent script. Supervisor's
+  ``with_structured_output(Plan)`` path returns a fixed ``Plan``.
+- We do not start a real stdio MCP server; a local ``@tool`` simulates a
+  weather lookup and is injected into ExternalContextAgent as ``mcp_tools``.
+- ``MemoryHistoryStore`` isolates history side effects.
+- Drive a full conversation through ``ChatOrchestrator._stream_multi_agent``
+  and verify:
+  1. supervisor / policy / external / writer all show up in
+     ``agents_invoked`` in the expected order.
+  2. Only WriterAgent tokens appear in ``token`` events; the
+     policy / external LLM outputs are not forwarded.
+  3. The ``done`` event has ``mode == "multi_agent"`` and a complete
+     ``agents_invoked`` list.
+  4. ``trace`` contains both supervisor node steps and the policy subgraph's
+     tool-call steps.
 """
 
 from __future__ import annotations
@@ -46,12 +49,13 @@ def memory_history():
 
 
 class _FakeChatModel:
-    """脚本驱动的 fake ChatModel。
+    """Script-driven fake ChatModel.
 
-    - ``invoke`` / ``stream``：按脚本顺序产出 ``AIMessage``（含 / 不含
-      ``tool_calls``）。
-    - ``bind_tools`` / ``with_config``：返回自身，便于复用脚本。
-    - ``with_structured_output(Plan)``：返回一个绑定了固定 ``Plan`` 的代理。
+    - ``invoke`` / ``stream``: yield ``AIMessage`` (with / without
+      ``tool_calls``) in script order.
+    - ``bind_tools`` / ``with_config``: return self so the script can be reused.
+    - ``with_structured_output(Plan)``: returns a proxy that ``invoke``s a
+      preset ``Plan``.
     """
 
     def __init__(self, scripted_messages: Iterable[AIMessage]) -> None:
@@ -68,7 +72,8 @@ class _FakeChatModel:
         return self
 
     def with_structured_output(self, schema):
-        # schema 必须是 Plan；返回另一个 model 代理，invoke 直接吐预设 Plan。
+        # The schema must be Plan; return a separate model proxy whose
+        # ``invoke`` directly emits the preset Plan.
         owner = self
 
         class _StructuredProxy:
@@ -105,7 +110,7 @@ class _FakeChatModel:
 
 
 class _FakeRagGraph:
-    """policy 子图里 ``rag_answer`` 工具背后的 fake RAG 图。"""
+    """Fake RAG graph backing the ``rag_answer`` tool inside the policy subgraph."""
 
     def __init__(self, payload: dict) -> None:
         self.payload = payload
@@ -136,11 +141,12 @@ def _build_multi_agent_graph_with_fakes(
     external_scripts: Iterable[AIMessage] | None = None,
     writer_scripts: Iterable[AIMessage] | None = None,
 ):
-    """每个 sub-agent 各持一个独立 FakeChat。
+    """Each sub-agent owns its own FakeChat instance.
 
-    policy / external 在父图里是并行 fan-out 节点，共用一个 cursor 会出现
-    竞态。给每个 sub-agent 自己的脚本就避免了这个问题。supervisor 不消耗
-    cursor（走 structured-output 路径），脚本可为空。
+    policy / external are parallel fan-out nodes in the parent graph;
+    sharing a single cursor would cause races. Giving each sub-agent its
+    own script avoids that. The supervisor does not consume the cursor
+    (it goes through the structured-output path), so its script may be empty.
     """
     supervisor_fake = _FakeChatModel(supervisor_scripts or [])
     supervisor_fake.set_structured_plan(plan)
@@ -194,7 +200,7 @@ def _build_multi_agent_graph_with_fakes(
 
 
 def _drive(graph, *, question: str, session_id: str):
-    """驱动一次 ``_stream_multi_agent``，收集 SSE 事件。"""
+    """Drive one ``_stream_multi_agent`` run and collect SSE events."""
     from backend.api.schemas import ChatStreamRequest
     from backend.orchestrator import ChatOrchestrator
     from backend.storage.sessions import create_session_if_missing
@@ -224,7 +230,7 @@ def _drive(graph, *, question: str, session_id: str):
 
 
 def test_multi_agent_routes_through_policy_external_writer(monkeypatch):
-    """完整的"出差 + 政策 + 天气 + 总结"路径。"""
+    """The full "travel + policy + weather + summary" path."""
     plan = Plan(
         use_policy=True,
         use_external=True,
@@ -234,9 +240,10 @@ def test_multi_agent_routes_through_policy_external_writer(monkeypatch):
         rationale="travel question, needs both internal policy and weather",
     )
 
-    # 每个 sub-agent 一份独立脚本：policy / external 在父图里并行 fan-out，
-    # 共享一个 cursor 会有竞态。supervisor 走 structured-output 路径，
-    # 脚本可空。
+    # One independent script per sub-agent: policy / external are parallel
+    # fan-out nodes in the parent graph, so sharing a single cursor would
+    # race. The supervisor goes through the structured-output path, so its
+    # script may be empty.
     policy_scripts = [
         AIMessage(
             content="",
@@ -295,24 +302,26 @@ def test_multi_agent_routes_through_policy_external_writer(monkeypatch):
     types = [e.type for e in events]
     assert types[-1] == "done"
 
-    # 1) 仅 writer 的内容出现在 done 的 full_answer 里：fake invoke 不会产
-    #    生 messages 流的 chunk，但 orchestrator 会从 ``state.final_answer``
-    #    兜底；policy / external 子图的中间产出不应进入最终答复。
+    # 1) Only writer content appears in done.full_answer: the fake invoke
+    #    does not produce a messages-stream chunk, but the orchestrator
+    #    falls back to ``state.final_answer``; intermediate output from
+    #    the policy / external subgraphs must not leak into the final answer.
     done = events[-1]
     full_answer = done.data["full_answer"]
     assert "Trip plan" in full_answer
-    assert "Pre-approval" not in full_answer  # policy summary 不应泄露
-    assert "Sunny" not in full_answer  # external summary 不应泄露
+    assert "Pre-approval" not in full_answer  # policy summary must not leak
+    assert "Sunny" not in full_answer  # external summary must not leak
 
-    # 真模型流式时，每个 token 事件都是 writer 的 chunk；fake 路径下允许为空。
+    # When the real model streams, every token event is a writer chunk;
+    # under the fake path it is allowed to be empty.
     token_events = [e for e in events if e.type == "token"]
     joined = "".join(e.data["text"] for e in token_events)
     if joined:
         assert "Pre-approval" not in joined
         assert "Sunny" not in joined
 
-    # 2) sources 由 PolicyAgent 写回（来自 fake rag_graph），通过 sources 事件
-    #    暴露给前端。
+    # 2) Sources are written back by the PolicyAgent (from the fake
+    #    rag_graph) and exposed to the frontend through sources events.
     source_events = [e for e in events if e.type == "sources"]
     assert source_events, "expected at least one sources event"
     final_sources = source_events[-1].data["sources"]
@@ -321,18 +330,18 @@ def test_multi_agent_routes_through_policy_external_writer(monkeypatch):
         for s in final_sources
     )
 
-    # 3) done 事件包含完整的 agents_invoked 顺序。
+    # 3) The done event contains the full agents_invoked sequence.
     assert done.data["mode"] == "multi_agent"
     invoked = done.data["agents_invoked"]
     assert "supervisor" in invoked
     assert "policy" in invoked
     assert "external_context" in invoked
     assert "writer" in invoked
-    # supervisor 必须排在 writer 前面。
+    # Supervisor must come before writer.
     assert invoked.index("supervisor") < invoked.index("writer")
 
-    # 4) trace 里同时有 supervisor / writer 的节点 step 与 policy 子图的
-    #    rag_answer 工具调用 step。
+    # 4) The trace contains both supervisor / writer node steps and the
+    #    policy subgraph's rag_answer tool-call step.
     trace = done.data["trace"]
     names = {step["name"] for step in trace}
     assert "supervisor" in names
@@ -342,12 +351,12 @@ def test_multi_agent_routes_through_policy_external_writer(monkeypatch):
         for step in trace
     )
 
-    # 5) Fake rag_graph 真的被 PolicyAgent 调用了一次。
+    # 5) The fake rag_graph really was invoked once by the PolicyAgent.
     assert len(rag_graph.invoked_with) == 1
 
 
 def test_multi_agent_skips_external_when_plan_disables_it(monkeypatch):
-    """``Plan.use_external=False`` 时 external 子图不应被触发。"""
+    """When ``Plan.use_external=False`` the external subgraph must not be triggered."""
     plan = Plan(
         use_policy=True,
         use_external=False,
@@ -358,7 +367,7 @@ def test_multi_agent_skips_external_when_plan_disables_it(monkeypatch):
     )
 
     policy_scripts = [
-        # PolicyAgent: 直接给 final summary（不调用工具）。
+        # PolicyAgent: emit a final summary directly (no tool call).
         AIMessage(content="Relevant rules:\n- Pre-approval needed."),
     ]
     writer_scripts = [
@@ -386,7 +395,7 @@ def test_multi_agent_skips_external_when_plan_disables_it(monkeypatch):
 
 
 def test_multi_agent_orchestrator_returns_503_when_graph_missing(monkeypatch):
-    """``runtime.multi_agent_graph is None`` 时 stream 立即返回 error 事件。"""
+    """When ``runtime.multi_agent_graph is None`` the stream should immediately emit an error event."""
     runtime = SimpleNamespace(
         rag_graph=None,
         agent_graph=None,
@@ -410,4 +419,4 @@ def test_multi_agent_orchestrator_returns_503_when_graph_missing(monkeypatch):
         )
     )
     assert events[-1].type == "error"
-    assert "Multi-Agent graph 未初始化" in events[-1].data["detail"]
+    assert "Multi-Agent graph is not initialized" in events[-1].data["detail"]

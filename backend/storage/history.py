@@ -1,12 +1,16 @@
-"""会话历史存储。
+"""Session history storage.
 
-设计要点：
-- 通过 ``HistoryStore`` 协议抽象不同后端，避免上层耦合具体实现。
-- 默认使用 PostgreSQL（与 pgvector 共用同一个数据库连接配置）。
-- ``MemoryHistoryStore`` 仅用于单元测试隔离，不作为生产后端。
-- 顶层函数 ``read_session_history`` / ``append_session_messages`` /
-  ``clear_session_history`` / ``build_history_path`` 保持原签名不变，
-  内部通过 ``_resolve_store()`` 路由到当前激活的 Store。
+Design notes:
+- Abstracts different backends behind the ``HistoryStore`` protocol so
+  the upper layers do not couple to a concrete implementation.
+- Uses PostgreSQL by default (sharing the same database connection
+  configuration as pgvector).
+- ``MemoryHistoryStore`` is for unit-test isolation only and is not a
+  production backend.
+- Top-level helpers ``read_session_history`` /
+  ``append_session_messages`` / ``clear_session_history`` /
+  ``build_history_path`` keep their original signatures and route
+  internally through ``_resolve_store()`` to the active store.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from backend.config import (
 
 
 def _normalize_message(message: dict[str, Any]) -> dict[str, str] | None:
-    """统一成 {role, content}，仅接受当前项目标准消息格式。"""
+    """Normalize to {role, content}; only the project-standard message format is accepted."""
     role = message.get("role")
     content = message.get("content")
 
@@ -44,7 +48,7 @@ def _normalize_messages(messages: list[dict]) -> list[dict[str, str]]:
 
 
 class HistoryStore(Protocol):
-    """会话历史存储协议。"""
+    """Session history storage protocol."""
 
     def read(self, session_id: str) -> list[dict[str, str]]: ...
 
@@ -60,7 +64,7 @@ class HistoryStore(Protocol):
 
 
 class MemoryHistoryStore:
-    """内存实现，主要用于单元测试隔离。"""
+    """In-memory implementation, primarily for unit-test isolation."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, list[dict[str, str]]] = {}
@@ -90,20 +94,20 @@ class MemoryHistoryStore:
 
 
 def _normalize_pg_connection_string(connection: str) -> str:
-    """把 SQLAlchemy 风格连接串转成 psycopg 直接可用的格式。"""
+    """Convert SQLAlchemy-style connection strings to a directly psycopg-compatible format."""
     return connection.replace("postgresql+psycopg://", "postgresql://", 1)
 
 
 class PostgresHistoryStore:
-    """基于 PostgreSQL 的会话历史实现。
+    """PostgreSQL-backed session history implementation.
 
-    表结构（启动时通过 ``CREATE TABLE IF NOT EXISTS`` 建立）：
+    Schema (created via ``CREATE TABLE IF NOT EXISTS`` at startup):
     - id          BIGSERIAL PRIMARY KEY
     - session_id  TEXT NOT NULL
     - role        TEXT NOT NULL
     - content     TEXT NOT NULL
     - created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-    索引：(session_id, created_at, id)
+    Index: (session_id, created_at, id)
     """
 
     def __init__(
@@ -121,7 +125,7 @@ class PostgresHistoryStore:
         try:
             import psycopg
         except ImportError as exc:
-            raise ImportError("缺少 psycopg 依赖，无法使用 PostgreSQL 历史存储。") from exc
+            raise ImportError("psycopg is required to use PostgreSQL history storage.") from exc
         return psycopg.connect(_normalize_pg_connection_string(self._connection_string))
 
     def _ensure_table(self, connection) -> None:
@@ -231,8 +235,8 @@ def _build_default_store() -> HistoryStore:
         return MemoryHistoryStore()
 
     raise ValueError(
-        f"未知的 HISTORY_BACKEND={HISTORY_BACKEND!r}，"
-        "可选值：postgres / memory。"
+        f"Unknown HISTORY_BACKEND={HISTORY_BACKEND!r}; "
+        "valid values: postgres / memory."
     )
 
 
@@ -241,14 +245,14 @@ _store_lock = threading.Lock()
 
 
 def set_history_store(store: HistoryStore) -> None:
-    """主要给测试用：手动注入一个存储实现。"""
+    """Mainly for tests: manually inject a storage implementation."""
     global _current_store
     with _store_lock:
         _current_store = store
 
 
 def reset_history_store() -> None:
-    """清空当前注册的存储，下次调用时按配置重新创建。"""
+    """Drop the currently registered store; the next call rebuilds from configuration."""
     global _current_store
     with _store_lock:
         _current_store = None
@@ -264,25 +268,26 @@ def _resolve_store() -> HistoryStore:
 
 
 def read_session_history(session_id: str) -> list[dict]:
-    """读取会话历史，向上层返回标准化后的消息列表。"""
+    """Read session history; returns the normalized message list to upper layers."""
     return _resolve_store().read(session_id)
 
 
 def append_session_messages(session_id: str, messages: list[dict]) -> list[dict]:
-    """追加消息并返回最新历史。"""
+    """Append messages and return the latest history."""
     return _resolve_store().append(session_id, messages)
 
 
 def clear_session_history(session_id: str) -> None:
-    """清空指定会话的历史。"""
+    """Clear the history for the given session."""
     _resolve_store().clear(session_id)
 
 
 def build_history_path(session_id: str) -> str:
-    """返回当前后端下会话历史的定位字符串。
+    """Return a locator string for the session history under the current backend.
 
-    - 数据库后端返回 ``postgres://<table>/<session_id>`` 形式的定位符；
-    - 内存后端返回 ``memory://chat_history/<session_id>`` 形式的定位符。
-    历史命名沿用旧名称是为了保持 ``ChatResponse.history_file`` 字段语义。
+    - Database backends return locators of the form ``postgres://<table>/<session_id>``.
+    - The memory backend returns locators of the form ``memory://chat_history/<session_id>``.
+    The historical name is preserved to keep the semantics of
+    ``ChatResponse.history_file`` stable.
     """
     return _resolve_store().locator(session_id)

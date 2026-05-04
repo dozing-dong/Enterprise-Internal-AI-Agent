@@ -1,16 +1,17 @@
-"""API 层自定义异常。
+"""Custom exceptions for the API layer.
 
-集中定义在独立模块中，避免 app.py 与路由模块之间的循环导入。
+Defined in a dedicated module to avoid circular imports between app.py and the route modules.
 """
 
 
 class RagException(Exception):
-    """RAG 流程中可预期的业务异常。
+    """Expected business exception raised inside the RAG pipeline.
 
-    status_code 用于映射 HTTP 状态码，让调用方能区分不同的错误类型：
-    - 400: 请求参数有误（客户端问题）
-    - 503: 下游服务（Bedrock / pgvector）不可用
-    - 500: 未预期的内部错误
+    status_code maps to an HTTP status code so callers can distinguish
+    between error categories:
+    - 400: invalid request parameters (client problem)
+    - 503: downstream service (Bedrock / pgvector) unavailable
+    - 500: unexpected internal error
     """
 
     def __init__(self, message: str, status_code: int = 500) -> None:

@@ -1,12 +1,15 @@
-"""统一调用轨迹（Trace）数据结构与累积器。
+"""Unified call trace data structure and accumulator.
 
-RAG 与 Agent 两种模式来源不同：
-- RAG：每个 LangGraph 节点（rewrite_query / vector_retrieve / ...）通过
-  ``tool_trace`` 增量推送，累积器把每条 dict 标准化成 ``TraceStep``。
-- Agent：从 ToolNode 推送的 ``messages`` 更新里抓 ``ToolMessage`` 与
-  对应 ``AIMessage.tool_calls``，转换成 ``TraceStep``。
+The two RAG and Agent modes have different sources:
+- RAG: each LangGraph node (rewrite_query / vector_retrieve / ...)
+  pushes incremental ``tool_trace`` entries; the accumulator
+  normalizes each dict into a ``TraceStep``.
+- Agent: from the ``messages`` updates emitted by the ToolNode, pull
+  ``ToolMessage`` and the matching ``AIMessage.tool_calls`` and convert
+  them into ``TraceStep`` entries.
 
-最终都吐成 ``list[TraceStep]``，前端只渲染一种格式。
+In both cases the final output is a ``list[TraceStep]`` so the frontend
+renders a single format.
 """
 
 from __future__ import annotations
@@ -18,16 +21,16 @@ from typing import Any
 
 @dataclass(slots=True)
 class TraceStep:
-    """单条调用轨迹。
+    """A single call trace entry.
 
-    字段保持精简，刚好够前端渲染：
-    - ``step``：步骤编号（从 1 起）。
-    - ``name``：节点 / 工具名。
-    - ``input_summary`` / ``output_summary``：人可读的简述（已截断）。
-    - ``ok``：是否成功；失败时 ``error`` 给原因。
-    - ``latency_ms``：可选，便于观察性能瓶颈。
-    - ``agent``：multi_agent 模式下产生这一步的 sub-agent 名（supervisor /
-      policy / external_context / writer）；其它模式下保持为 ``None``。
+    Fields are kept lean-just enough for the frontend to render:
+    - ``step``: step number (1-based).
+    - ``name``: node / tool name.
+    - ``input_summary`` / ``output_summary``: human-readable summaries (truncated).
+    - ``ok``: whether it succeeded; on failure ``error`` carries the cause.
+    - ``latency_ms``: optional, for observing performance hotspots.
+    - ``agent``: in multi_agent mode, the sub-agent that produced this
+      step (supervisor / policy / external_context / writer); ``None`` in other modes.
     """
 
     step: int
@@ -57,12 +60,12 @@ def _truncate(value: Any, *, limit: int = 160) -> str | None:
     if not text:
         return None
     if len(text) > limit:
-        return text[: limit - 1].rstrip() + "…"
+        return text[: limit - 1].rstrip() + "\u2026"
     return text
 
 
 def _summarize_rag_step(entry: dict[str, Any]) -> tuple[str | None, str | None]:
-    """根据 RAG 节点写入的 tool_trace 字段，提取统一的 input/output 摘要。"""
+    """Extract unified input/output summaries from the tool_trace fields a RAG node writes."""
     name = entry.get("tool", "")
 
     input_summary: str | None = None
@@ -92,9 +95,10 @@ def _summarize_rag_step(entry: dict[str, Any]) -> tuple[str | None, str | None]:
 
 @dataclass
 class TraceCollector:
-    """流式累积 TraceStep。
+    """Streamingly accumulate TraceSteps.
 
-    供 orchestrator 在 ``updates`` 流里 push 节点更新时调用。
+    Called by the orchestrator when node updates arrive on the
+    ``updates`` stream.
     """
 
     steps: list[TraceStep] = field(default_factory=list)
@@ -106,10 +110,11 @@ class TraceCollector:
         *,
         agent: str | None = None,
     ) -> None:
-        """RAG 模式：把节点新增的 tool_trace 列表追加到轨迹。
+        """RAG mode: append tool_trace entries newly emitted by a node to the trace.
 
-        ``agent`` 可选：multi_agent 调度的 PolicyAgent 子图也会推 RAG
-        风格的 tool_trace，此时把每条 step 标记为该 sub-agent。
+        ``agent`` is optional: the PolicyAgent subgraph dispatched by
+        multi_agent also pushes RAG-style tool_trace entries; in that case
+        each step is tagged with the corresponding sub-agent.
         """
         if not entries:
             return
@@ -135,17 +140,17 @@ class TraceCollector:
         *,
         agent: str | None = None,
     ) -> None:
-        """Agent 模式：从 ToolNode/agent 节点产生的消息里抽工具调用与结果。
+        """Agent mode: pull tool calls and results from ToolNode/agent-node messages.
 
-        - ``AIMessage.tool_calls``：模型本轮请求的工具调用 → 暂存
-        - ``ToolMessage``：工具执行结果 → 与之前的 tool_call 配对成 step
-        - ``agent``：可选，标记这一组消息属于哪个 sub-agent（用于 multi_agent）。
+        - ``AIMessage.tool_calls``: tool calls requested by the model this turn -> staged
+        - ``ToolMessage``: tool execution result -> paired with a previously-staged tool_call to form a step
+        - ``agent``: optional, marks this batch of messages as belonging to a particular sub-agent (used by multi_agent).
         """
         if not messages:
             return
 
-        # 先把已暂存但还没匹配的 tool_calls 从已有 step 中拿出来
-        # 简单实现：维护一个本轮内的 tool_use_id -> step 索引映射
+        # Pull staged-but-unmatched tool_calls from the existing steps.
+        # Simple implementation: maintain a per-turn tool_use_id -> step-index map.
         for msg in messages:
             if _is_ai_message_with_tool_calls(msg):
                 for call in msg.tool_calls:
@@ -210,10 +215,11 @@ class TraceCollector:
         input_summary: str | None = None,
         output_summary: str | None = None,
     ) -> None:
-        """multi_agent 模式：直接登记一条节点级 step（非工具调用）。
+        """multi_agent mode: directly register a node-level step (not a tool call).
 
-        例如 supervisor 的决策、writer 的最终生成。这些不是 ToolMessage 也
-        不是 RAG 节点的 tool_trace，单独走这个入口。
+        For example the supervisor's decision or the writer's final
+        generation. These are neither ToolMessages nor RAG-node
+        tool_trace entries, so they go through this dedicated entry point.
         """
         if not name:
             return
@@ -231,8 +237,8 @@ class TraceCollector:
     def to_list(self) -> list[dict[str, Any]]:
         return [step.to_dict() for step in self.steps]
 
-    # 内部：tool_call_id -> step 索引，用于把 AIMessage.tool_calls 与
-    # 后到的 ToolMessage 结果绑定。
+    # Internal: tool_call_id -> step index, used to bind an
+    # AIMessage.tool_calls entry with the ToolMessage result that arrives later.
     _pending_call_index_by_id: dict[str, int] = field(default_factory=dict)
 
 

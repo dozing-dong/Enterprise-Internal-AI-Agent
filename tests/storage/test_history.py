@@ -1,7 +1,8 @@
-"""会话历史存储的单元测试。
+"""Unit tests for session history storage.
 
-只针对 ``MemoryHistoryStore`` 这条无外部依赖路径，覆盖：
-读空 / 追加顺序 / 清空 / locator / 默认后端选择。
+Targets only the ``MemoryHistoryStore`` path (no external dependencies),
+covering: empty reads / append ordering / clear / locator / default
+backend selection.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from backend.storage.history import (
 
 @pytest.fixture(autouse=True)
 def memory_backend():
-    """每个用例都使用全新的 MemoryHistoryStore，避免跨用例污染。"""
+    """Each test gets a fresh MemoryHistoryStore to avoid cross-test pollution."""
     set_history_store(MemoryHistoryStore())
     try:
         yield
@@ -87,9 +88,11 @@ def test_locator_uses_active_backend():
 
 
 def test_normalize_messages_rejects_non_project_payload():
+    # Chinese fixture content kept as Unicode escapes; this verifies that
+    # the LangChain-style payload shape is rejected for the project format.
     payload = [
-        {"type": "human", "data": {"content": "你好"}},
-        {"type": "ai", "data": {"content": "你好，请问你是？"}},
+        {"type": "human", "data": {"content": "\u4f60\u597d"}},
+        {"type": "ai", "data": {"content": "\u4f60\u597d\uff0c\u8bf7\u95ee\u4f60\u662f\uff1f"}},
         {"type": "system", "data": {"content": "ignore"}},
     ]
     normalized = _normalize_messages(payload)

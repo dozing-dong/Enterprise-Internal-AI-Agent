@@ -1,11 +1,13 @@
-"""WriterAgent：唯一的"用户可见生成节点"。
+"""WriterAgent: the only "user-visible generation node".
 
-设计要点：
-- 整合 Supervisor / Policy / External 三家结果，调用一次 LLM 产出最终
-  Markdown 风格答复。
-- 用唯一 tag ``WRITER_TAG = "agent_writer"``，orchestrator 据此把 token
-  流转给前端，子 Agent 内部 LLM 输出全部过滤掉。
-- 子图只有一个节点；不开 ReAct 循环，避免 writer 还要再调外部工具。
+Design notes:
+- Integrates the Supervisor / Policy / External results, calls the LLM
+  once to produce the final Markdown-style reply.
+- Uses a unique tag ``WRITER_TAG = "agent_writer"`` so the orchestrator
+  forwards token streams to the frontend; LLM output from sub-agents is
+  filtered out.
+- The subgraph has just one node; no ReAct loop, so the writer never
+  has to call external tools.
 """
 
 from __future__ import annotations
@@ -84,7 +86,7 @@ def _format_external_section(external_result: dict | None) -> str:
 
 
 def build_writer_node():
-    """工厂：返回 writer 节点函数（唯一可见生成节点）。"""
+    """Factory: return the writer node function (the only visible generation node)."""
 
     chat_model = get_chat_model(temperature=WRITER_TEMPERATURE).with_config(
         tags=[WRITER_TAG]
@@ -125,7 +127,7 @@ def build_writer_node():
             text = ""
 
         return {
-            "final_answer": text or "未能生成可用回答。",
+            "final_answer": text or "Failed to generate a usable answer.",
             "agents_invoked": [AGENT_NAME_WRITER],
         }
 

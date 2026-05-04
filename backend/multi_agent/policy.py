@@ -1,9 +1,10 @@
-"""Multi-Agent 策略层：Pydantic Plan + 各 sub-agent 的 system prompt。
+"""Multi-Agent policy layer: Pydantic Plan + each sub-agent's system prompt.
 
-集中管理：
-- ``Plan``：Supervisor 用 ``with_structured_output(Plan)`` 输出的路由决策。
-- 各 sub-agent 的 system prompt 与温度。
-- ``AGENT_NAME_*``：sub-agent 在 ``MultiAgentState.agents_invoked`` 中的展示名。
+Centrally manages:
+- ``Plan``: the routing decision the Supervisor outputs via ``with_structured_output(Plan)``.
+- The system prompt and temperature for each sub-agent.
+- ``AGENT_NAME_*``: the display name of each sub-agent in
+  ``MultiAgentState.agents_invoked``.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
-# Sub-agent 标识
+# Sub-agent identifiers
 # ---------------------------------------------------------------------------
 
 AGENT_NAME_SUPERVISOR = "supervisor"
@@ -24,20 +25,23 @@ AGENT_NAME_WRITER = "writer"
 
 
 # ---------------------------------------------------------------------------
-# Supervisor 决策结构
+# Supervisor decision structure
 # ---------------------------------------------------------------------------
 
 
 class Plan(BaseModel):
-    """Supervisor 的结构化决策输出。
+    """Structured decision output from the Supervisor.
 
-    字段语义：
-    - ``use_policy``：是否需要 PolicyAgent 检索内部差旅 / 报销 / 审批知识。
-    - ``use_external``：是否需要 ExternalContextAgent 拉外部信息（天气、节假日、网搜）。
-    - ``locations``：与查询相关的地理位置（用于天气查询）。
-    - ``date_range``：用户问题里涉及的时间范围（自由文本，例如 "next week"）。
-    - ``needs_employee_lookup``：是否需要在 supervisor 阶段直接做一次员工目录查询。
-    - ``rationale``：模型对路由选择的简短解释，便于调试与日志。
+    Field semantics:
+    - ``use_policy``: whether to dispatch the PolicyAgent to retrieve internal
+      travel / expense / approval knowledge.
+    - ``use_external``: whether to dispatch the ExternalContextAgent for outside
+      information (weather, public holidays, web search).
+    - ``locations``: geographic locations relevant to the query (used for weather lookup).
+    - ``date_range``: time range mentioned in the user's question (free-text, e.g. "next week").
+    - ``needs_employee_lookup``: whether to perform an employee directory lookup
+      directly during the supervisor stage.
+    - ``rationale``: short explanation of the routing choice for debugging and logging.
     """
 
     use_policy: bool = Field(
@@ -67,7 +71,7 @@ class Plan(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 温度 & system prompts
+# Temperatures & system prompts
 # ---------------------------------------------------------------------------
 
 SUPERVISOR_TEMPERATURE = float(os.getenv("MULTI_AGENT_SUPERVISOR_TEMPERATURE", "0.0"))
@@ -113,7 +117,7 @@ POLICY_SYSTEM_PROMPT = (
     "   accommodation limits, reimbursement deadlines, submission process. "
     "   Do NOT use a generic query like 'what is the travel policy'. "
     "   Strip out weather, destination descriptions, personal names, and travel "
-    "   logistics—those belong to ExternalContextAgent.\n"
+    "   logistics-those belong to ExternalContextAgent.\n"
     "2. Issue at most one tool call per turn.\n"
     "3. Ground your summary strictly on the tool's answer. Never fabricate policy text.\n"
     "4. If the tool returns nothing useful, respond with exactly: "
@@ -137,10 +141,10 @@ EXTERNAL_SYSTEM_PROMPT = (
     "4. Respond in the same language as the user's question.\n"
     "5. NEVER use web search for company policies, HR rules, expense limits, "
     "   approval workflows, or any internal company topics. Those are handled "
-    "   exclusively by a separate PolicyAgent—do not duplicate that work.\n"
+    "   exclusively by a separate PolicyAgent-do not duplicate that work.\n"
     "6. For restaurant, dining, or local attraction queries, always use "
     "   `brave_web_search` (e.g. 'best restaurants North Shore Auckland'). "
-    "   Do NOT call `brave_local_search`—it requires a paid API subscription "
+    "   Do NOT call `brave_local_search`-it requires a paid API subscription "
     "   and will always fail on this deployment.\n"
     "7. If any tool returns an error, do NOT retry with the same or a "
     "   different tool for the same intent. Immediately proceed to summarise "
@@ -166,6 +170,6 @@ WRITER_SYSTEM_PROMPT = (
     "- Ground every factual claim on the provided summaries. "
     "  Never fabricate policy text, weather data, or employee details.\n"
     "- If critical context is missing and it matters to the answer, "
-    "  say so briefly in one sentence—don't build a section around it.\n"
+    "  say so briefly in one sentence-don't build a section around it.\n"
     "- Respond in the same language as the user's question."
 )

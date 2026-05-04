@@ -1,4 +1,4 @@
-"""API 层共享的 Pydantic 请求/响应模型。"""
+"""Shared Pydantic request/response models for the API layer."""
 
 from datetime import datetime
 from typing import Literal
@@ -6,37 +6,37 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-# 支持的执行模式：
-# - rag：固定 LangGraph 流水线（rewrite -> hybrid retrieve -> rerank -> generate）
-# - agent：模型自决 + 工具调用循环（ReAct）
-# - multi_agent：Supervisor + Policy + ExternalContext + Writer 多 Agent 编排
+# Supported execution modes:
+# - rag: fixed LangGraph pipeline (rewrite -> hybrid retrieve -> rerank -> generate)
+# - agent: model-driven + tool-calling loop (ReAct)
+# - multi_agent: Supervisor + Policy + ExternalContext + Writer multi-agent orchestration
 ChatMode = Literal["rag", "agent", "multi_agent"]
 
 
 class ChatRequest(BaseModel):
-    """聊天请求体（POST /chat 与 POST /chat/stream 共用）。"""
+    """Chat request body (shared by POST /chat and POST /chat/stream)."""
 
-    question: str = Field(..., min_length=1, description="用户输入的问题")
-    session_id: str = Field(default="default", description="会话 ID")
+    question: str = Field(..., min_length=1, description="User input question")
+    session_id: str = Field(default="default", description="Session ID")
     mode: ChatMode = Field(
         default="rag",
-        description="执行模式：rag = 固定流水线；agent = 模型自决 + 工具调用",
+        description="Execution mode: rag = fixed pipeline; agent = model-driven + tool calling",
     )
 
 
 class ChatStreamRequest(BaseModel):
-    """流式聊天请求体；session_id 必填，由前端先调用 POST /sessions 取得。"""
+    """Streaming chat request body; session_id is required and must be obtained via POST /sessions first."""
 
-    question: str = Field(..., min_length=1, description="用户输入的问题")
-    session_id: str = Field(..., min_length=1, description="规范化的会话 ID")
+    question: str = Field(..., min_length=1, description="User input question")
+    session_id: str = Field(..., min_length=1, description="Normalized session ID")
     mode: ChatMode = Field(
         default="rag",
-        description="执行模式：rag = 固定流水线；agent = 模型自决 + 工具调用",
+        description="Execution mode: rag = fixed pipeline; agent = model-driven + tool calling",
     )
 
 
 class SourceItem(BaseModel):
-    """单个检索来源。"""
+    """A single retrieval source."""
 
     rank: int
     content: str
@@ -44,7 +44,7 @@ class SourceItem(BaseModel):
 
 
 class TraceStepModel(BaseModel):
-    """单条统一调用轨迹，对应 ``backend/orchestrator/trace.TraceStep``。"""
+    """A single unified call trace step; mirrors ``backend/orchestrator/trace.TraceStep``."""
 
     step: int
     name: str
@@ -53,46 +53,47 @@ class TraceStepModel(BaseModel):
     ok: bool = True
     latency_ms: int | None = None
     error: str | None = None
-    # multi_agent 模式下，标注这一步属于哪个 sub-agent（supervisor / policy /
-    # external_context / writer）。其它模式下保持为 None。
+    # In multi_agent mode, marks which sub-agent this step belongs to
+    # (supervisor / policy / external_context / writer). None in other modes.
     agent: str | None = None
 
 
 class ChatResponse(BaseModel):
-    """聊天响应体。"""
+    """Chat response body."""
 
     answer: str
     original_question: str
-    # 实际用于检索的问题，方便观察查询改写前后的差别。
+    # The question actually used for retrieval; useful for observing
+    # the difference before/after query rewriting.
     retrieval_question: str
     session_id: str
     history_file: str
     sources: list[SourceItem]
-    # 统一的调用轨迹（RAG / Agent / Multi-Agent 三种模式格式一致）。
+    # Unified call trace (same format across RAG / Agent / Multi-Agent modes).
     trace: list[TraceStepModel] = Field(default_factory=list)
-    # 用于前端确认本轮实际走的是哪种模式。
+    # Lets the frontend confirm which mode this turn actually used.
     mode: ChatMode | None = None
-    # multi_agent 模式下被触发过的 sub-agent 顺序列表（去重，按出现顺序）。
-    # 其它模式下保持为空列表。
+    # In multi_agent mode, the ordered list of sub-agents that were invoked
+    # (deduplicated, in order of first appearance). Empty in other modes.
     agents_invoked: list[str] = Field(default_factory=list)
 
 
 class HistoryResponse(BaseModel):
-    """历史记录响应体。"""
+    """Chat history response body."""
 
     session_id: str
     messages: list[dict]
 
 
 class ClearHistoryResponse(BaseModel):
-    """清空历史的响应体。"""
+    """Response body for clearing history."""
 
     message: str
     session_id: str
 
 
 class ApiInfoResponse(BaseModel):
-    """根路由返回的服务信息。"""
+    """Service info returned by the root route."""
 
     name: str
     message: str
@@ -100,7 +101,7 @@ class ApiInfoResponse(BaseModel):
 
 
 class SessionItem(BaseModel):
-    """单条会话元数据，用于侧边栏展示。"""
+    """A single session metadata entry; used by the sidebar."""
 
     session_id: str
     title: str
@@ -109,29 +110,29 @@ class SessionItem(BaseModel):
 
 
 class SessionListResponse(BaseModel):
-    """会话列表响应体。"""
+    """Session list response body."""
 
     sessions: list[SessionItem]
 
 
 class CreateSessionRequest(BaseModel):
-    """创建会话的可选请求体。"""
+    """Optional request body for creating a session."""
 
     title: str | None = Field(
         default=None,
         max_length=80,
-        description="可选的初始标题；不传则使用 'New Chat'。",
+        description="Optional initial title; defaults to 'New Chat' when omitted.",
     )
 
 
 class RenameSessionRequest(BaseModel):
-    """重命名会话的请求体。"""
+    """Request body for renaming a session."""
 
     title: str = Field(..., min_length=1, max_length=80)
 
 
 class DeleteSessionResponse(BaseModel):
-    """删除会话的响应体。"""
+    """Response body for deleting a session."""
 
     message: str
     session_id: str

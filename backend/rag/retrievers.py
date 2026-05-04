@@ -24,7 +24,7 @@ from backend.types import RagDocument
 
 
 def _normalize_connection_string(connection: str) -> str:
-    """把 SQLAlchemy 风格的连接串转为 psycopg 可用格式。"""
+    """Convert SQLAlchemy-style connection strings to a psycopg-compatible format."""
     return connection.replace("postgresql+psycopg://", "postgresql://", 1)
 
 
@@ -98,7 +98,7 @@ def _connect():
     try:
         import psycopg
     except ImportError as exc:
-        raise ImportError("缺少 psycopg 依赖，无法使用 pgvector。") from exc
+        raise ImportError("psycopg is required to use pgvector.") from exc
     return psycopg.connect(_normalize_connection_string(PGVECTOR_CONNECTION))
 
 
@@ -112,7 +112,7 @@ class VectorStoreClient:
             _ensure_tables(connection)
             collection_id = _get_collection_id(connection, self.collection_name, create=True)
             if collection_id is None:
-                raise RuntimeError("无法创建 pgvector collection。")
+                raise RuntimeError("Failed to create the pgvector collection.")
             if pre_delete_collection:
                 _delete_collection_documents(connection, collection_id)
 
@@ -189,7 +189,7 @@ class VectorStoreClient:
 
 @dataclass(slots=True)
 class SearchRetriever:
-    """轻量检索器协议，保留 invoke 接口便于兼容原调用方。"""
+    """Lightweight retriever protocol; keeps the invoke interface for backward compatibility."""
 
     invoke_fn: Callable[[str], list[RagDocument]]
 
@@ -205,7 +205,7 @@ class Bm25Index:
 
 
 def get_vector_document_count(vectorstore: Any, fallback_count: int = 0) -> int:
-    """统一读取不同向量库实现中的文档总数。"""
+    """Read the document count uniformly across different vector store implementations."""
     if hasattr(vectorstore, "count"):
         return vectorstore.count()
     return int(fallback_count)
@@ -230,7 +230,7 @@ def _load_pgvector_store(collection_name: str = PGVECTOR_COLLECTION_NAME) -> Vec
 
 
 def rebuild_vectorstore(split_documents_list: list[RagDocument]) -> VectorStoreClient:
-    """重建并持久化向量库。"""
+    """Rebuild and persist the vector store."""
     return _build_pgvector_store(
         split_documents_list,
         pre_delete_collection=PGVECTOR_PRE_DELETE_COLLECTION,
@@ -239,7 +239,7 @@ def rebuild_vectorstore(split_documents_list: list[RagDocument]) -> VectorStoreC
 
 
 def load_vectorstore() -> VectorStoreClient:
-    """加载已经持久化到磁盘的向量库。"""
+    """Load the vector store that has already been persisted to disk."""
     return _load_pgvector_store()
 
 
@@ -247,7 +247,7 @@ def build_evaluation_vectorstore(
     split_documents_list: list[RagDocument],
     collection_name: str,
 ) -> VectorStoreClient:
-    """为评测脚本构建一个不落盘的临时向量库。"""
+    """Build a temporary, non-persistent vector store for evaluation scripts."""
     return _build_pgvector_store(
         split_documents_list,
         pre_delete_collection=True,
@@ -256,30 +256,30 @@ def build_evaluation_vectorstore(
 
 
 def tokenize_for_bm25(text: str) -> list[str]:
-    """给 BM25 做一个简单、可读的中文友好分词。"""
+    """A simple, readable tokenizer for BM25 with friendly handling for CJK text."""
     normalized = text.lower()
     chunks = re.findall(r"[\u4e00-\u9fff]+|[a-z0-9_]+", normalized)
 
     tokens: list[str] = []
 
     for chunk in chunks:
-        # 英文和数字直接保留。
+        # Latin and digits are kept as-is.
         if re.fullmatch(r"[a-z0-9_]+", chunk):
             tokens.append(chunk)
             continue
 
-        # 单字中文直接保留。
+        # Single CJK characters are kept as-is.
         if len(chunk) <= BM25_TOKENIZER_NGRAM - 1:
             tokens.append(chunk)
             continue
 
-        # 多字中文做简单的 n-gram。
+        # Multi-character CJK sequences use a simple n-gram split.
         tokens.extend(
             chunk[index:index + BM25_TOKENIZER_NGRAM]
             for index in range(len(chunk) - BM25_TOKENIZER_NGRAM + 1)
         )
 
-    # 如果上面的规则没有切出任何 token，就退回原始字符列表。
+    # If no tokens were produced, fall back to a per-character split.
     return tokens or list(normalized)
 
 
@@ -289,7 +289,7 @@ def vector_search(
     *,
     top_k: int,
 ) -> list[RagDocument]:
-    """执行向量检索。"""
+    """Run vector retrieval."""
     return vectorstore.similarity_search(query, top_k=top_k)
 
 
@@ -297,7 +297,7 @@ def build_vector_retriever(
     vectorstore: VectorStoreClient,
     top_k: int = RETRIEVER_TOP_K,
 ) -> SearchRetriever:
-    """把向量库包装成一个统一接口的检索器。"""
+    """Wrap the vector store as a unified-interface retriever."""
     return SearchRetriever(invoke_fn=lambda query: vector_search(vectorstore, query, top_k=top_k))
 
 
@@ -343,7 +343,7 @@ def build_bm25_retriever(
     split_documents_list: list[RagDocument],
     top_k: int = RETRIEVER_TOP_K,
 ) -> SearchRetriever:
-    """基于切分后的文档构建 BM25 检索器。"""
+    """Build a BM25 retriever from already-split documents."""
     bm25_index = build_bm25_index(split_documents_list)
     return SearchRetriever(
         invoke_fn=lambda query: keyword_search(bm25_index, query, top_k=top_k),
@@ -363,7 +363,7 @@ def fuse_retrieval_results(
     vector_weight: float = VECTOR_WEIGHT,
     bm25_weight: float = BM25_WEIGHT,
 ) -> list[RagDocument]:
-    """通过 RRF 融合两个检索列表。"""
+    """Fuse two retrieval lists via RRF."""
     doc_map: dict[tuple[str, str], RagDocument] = {}
     scored: dict[tuple[str, str], float] = {}
 
@@ -393,7 +393,7 @@ def build_hybrid_retriever(
     vectorstore: VectorStoreClient,
     top_k: int = RETRIEVER_TOP_K,
 ) -> SearchRetriever:
-    """构建混合检索器：向量检索 + BM25。"""
+    """Build a hybrid retriever: vector retrieval + BM25."""
     vector_retriever = build_vector_retriever(vectorstore, top_k=top_k)
     bm25_retriever = build_bm25_retriever(split_documents_list, top_k=top_k)
 

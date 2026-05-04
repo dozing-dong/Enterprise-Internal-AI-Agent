@@ -1,9 +1,9 @@
-"""FastAPI 应用工厂。
+"""FastAPI application factory.
 
-职责：
-- 通过 lifespan 管理运行时的启动与关闭。
-- 注册全局异常处理器。
-- 挂载各业务路由模块。
+Responsibilities:
+- Manage runtime startup and shutdown via lifespan.
+- Register global exception handlers.
+- Mount business route modules.
 """
 
 from contextlib import asynccontextmanager
@@ -24,20 +24,20 @@ from backend.runtime import DemoRuntime
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用生命周期：启动时预热运行时，关闭时可做清理。"""
+    """Manage application lifecycle: warm up runtime on startup, clean up on shutdown."""
     init_runtime()
     yield
-    # 关闭阶段：如有需要可在此处释放数据库连接池等资源。
+    # Shutdown stage: release database connection pools or similar resources here if needed.
 
 
 app = FastAPI(
     title="RAG Demo API",
     version="0.5.0",
-    description="企业内部知识库问答系统后端，包含查询改写、混合检索和多轮对话。",
+    description="Enterprise internal knowledge base Q&A backend with query rewriting, hybrid retrieval, and multi-turn dialogue.",
     lifespan=lifespan,
 )
 
-# 允许本地 Vite 开发服务器跨域访问。生产部署时应换成实际前端域名。
+# Allow CORS from the local Vite dev server. Replace with the actual frontend domain in production.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -53,7 +53,7 @@ app.add_middleware(
 
 @app.exception_handler(RagException)
 async def rag_exception_handler(request: Request, exc: RagException) -> JSONResponse:
-    """将 RagException 映射为结构化的 JSON 错误响应。"""
+    """Map RagException to a structured JSON error response."""
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.message},
@@ -62,13 +62,14 @@ async def rag_exception_handler(request: Request, exc: RagException) -> JSONResp
 
 @app.exception_handler(RuntimeError)
 async def runtime_error_handler(request: Request, exc: RuntimeError) -> JSONResponse:
-    """捕获未被路由层处理的 RuntimeError，统一返回 503。
+    """Catch RuntimeErrors not handled by routes and uniformly return 503.
 
-    常见场景：运行时未初始化、pgvector 连接失败、Bedrock 调用超时。
+    Common scenarios: runtime not initialized, pgvector connection failure,
+    Bedrock call timeout.
     """
     return JSONResponse(
         status_code=503,
-        content={"detail": f"服务暂时不可用：{exc}"},
+        content={"detail": f"Service temporarily unavailable: {exc}"},
     )
 
 
@@ -79,17 +80,17 @@ app.include_router(sessions_router)
 
 @app.get("/", response_model=ApiInfoResponse)
 def api_info(runtime: Annotated[DemoRuntime, Depends(get_runtime)]) -> ApiInfoResponse:
-    """返回服务基本信息，也用于确认服务已启动。"""
+    """Return basic service info; also used to confirm the service has started."""
     return ApiInfoResponse(
         name="RAG Demo API",
-        message="服务已启动，可访问 /docs 查看接口文档。",
+        message="Service is running. Visit /docs for API documentation.",
         execution_mode=runtime.execution_mode,
     )
 
 
 @app.get("/health")
 def health(runtime: Annotated[DemoRuntime, Depends(get_runtime)]) -> dict:
-    """健康检查接口，返回向量库文档数量等运行状态。"""
+    """Health check endpoint; returns runtime status such as vector store document count."""
     return {
         "status": "ok",
         "vector_document_count": runtime.vector_document_count,

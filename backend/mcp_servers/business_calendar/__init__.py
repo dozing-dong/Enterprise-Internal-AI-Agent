@@ -1,12 +1,15 @@
 """Business Calendar MCP server.
 
-通过 ``python -m backend.mcp_servers.business_calendar`` 启动一个 stdio MCP
-server，对外暴露三个工具：
+Run via ``python -m backend.mcp_servers.business_calendar`` to start a
+stdio MCP server that exposes three tools:
 
-- ``is_business_day(date, country)``：判断给定日期是否为该国家工作日。
-- ``add_business_days(start_date, days, country)``：从某天起跳过节假日 / 周末
-  累加 N 个工作日，返回结果日期。
-- ``country_holidays(year, country)``：列出某国全年节假日。
+- ``is_business_day(date, country)``: check whether a date is a business
+  day in the given country.
+- ``add_business_days(start_date, days, country)``: starting from a date,
+  add N business days while skipping weekends and public holidays.
+- ``country_holidays(year, country)``: list public holidays for a country
+  in the given year.
 
-底层使用 ``holidays`` 包，默认 country = NZ（新西兰，与示例 query 一致）。
+Backed by the ``holidays`` package; default country = NZ (New Zealand,
+matching the example query).
 """

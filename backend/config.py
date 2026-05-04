@@ -8,8 +8,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOTENV_PATH = PROJECT_ROOT / ".env"
 DOTENV_LOCAL_PATH = PROJECT_ROOT / ".env.local"
 
-# 按顺序加载本地配置文件，且不覆盖系统环境变量。
-# 这样可以兼容 CI、容器和开发者本机手动注入的凭证。
+# Load local config files in order, without overriding system environment variables.
+# This keeps CI, container, and developer-injected credentials all compatible.
 load_dotenv(DOTENV_PATH, override=False)
 load_dotenv(DOTENV_LOCAL_PATH, override=False)
 
@@ -20,13 +20,15 @@ RETRIEVER_TOP_K = 3
 VECTOR_WEIGHT = 0.6
 BM25_WEIGHT = 0.4
 
-# 召回阶段（向量、BM25、融合）保留的候选数量。
-# 重排开启时通常放大到 20~50，让 reranker 有更大的候选池可选；
-# 关闭重排时与 RETRIEVER_TOP_K 等价即可。
+# Number of candidates kept during the recall stage (vector, BM25, fusion).
+# When reranking is on, typically expand to 20~50 to give the reranker a
+# larger candidate pool; when reranking is off, keeping it equal to
+# RETRIEVER_TOP_K is sufficient.
 RETRIEVER_CANDIDATE_K = int(os.getenv("RETRIEVER_CANDIDATE_K", "20"))
 
-# 重排相关配置。
-# 默认启用：若运行环境不支持，可通过环境变量显式关闭。
+# Reranking-related configuration.
+# Enabled by default; if the runtime does not support it, disable explicitly
+# via the environment variable.
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
 RERANK_BACKEND = os.getenv("RERANK_BACKEND", "bedrock")
 RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "5"))
@@ -34,11 +36,11 @@ BEDROCK_RERANK_MODEL_ID = os.getenv(
     "BEDROCK_RERANK_MODEL_ID",
     "amazon.rerank-v1:0",
 )
-# Bedrock Rerank API 走的是 bedrock-agent-runtime；
-# 该服务在 region 上的可用性与 bedrock-runtime 不一定一致，单独配置以便切换。
+# The Bedrock Rerank API uses bedrock-agent-runtime; its regional availability
+# may differ from bedrock-runtime, so it has its own configuration for easy switching.
 BEDROCK_RERANK_REGION = os.getenv("BEDROCK_RERANK_REGION", "")
 
-CHUNK_SEPARATORS = ["。", "，", "\n", ""]
+CHUNK_SEPARATORS = ["\u3002", "\uff0c", "\n", ""]
 DEFAULT_CHUNK_PROFILE_NAME = "balanced_default"
 CHUNK_PROFILES = {
     "small_dense": {
@@ -85,16 +87,17 @@ BM25_TOKENIZER_NGRAM = int(os.getenv("BM25_TOKENIZER_NGRAM", "2"))
 LANGGRAPH_MAX_ITERATIONS = int(os.getenv("LANGGRAPH_MAX_ITERATIONS", "2"))
 LANGGRAPH_MIN_SOURCES = int(os.getenv("LANGGRAPH_MIN_SOURCES", "1"))
 
-# 会话历史存储后端：postgres / memory。
-# 默认走 postgres，与向量库共用同一个连接配置；memory 仅用于测试隔离。
+# Chat history storage backend: postgres / memory.
+# Defaults to postgres, sharing the same connection config as the vector store;
+# `memory` is intended for test isolation only.
 HISTORY_BACKEND = os.getenv("HISTORY_BACKEND", "postgres")
 HISTORY_TABLE = os.getenv("HISTORY_TABLE", "rag_chat_history")
 
-# 员工结构化检索：与向量库共用同一套 PG 连接配置。
-# - ``EMPLOYEE_TABLE``：员工目录表名（启动时 CREATE IF NOT EXISTS）。
-# - ``EMPLOYEE_LOOKUP_TOP_K``：单次模糊检索默认返回上限。
-# - ``EMPLOYEE_RAG_MANDATORY``：是否在 RAG chain 中固定执行员工检索节点。
-# - ``EMPLOYEE_SEED_ON_STARTUP``：服务启动时是否写入 demo 员工数据。
+# Employee structured retrieval: shares the same PG connection as the vector store.
+# - ``EMPLOYEE_TABLE``: employee directory table name (CREATE IF NOT EXISTS at startup).
+# - ``EMPLOYEE_LOOKUP_TOP_K``: default upper bound for results in a single fuzzy lookup.
+# - ``EMPLOYEE_RAG_MANDATORY``: whether the RAG chain always runs the employee lookup node.
+# - ``EMPLOYEE_SEED_ON_STARTUP``: whether to insert demo employees at service startup.
 EMPLOYEE_TABLE = os.getenv("EMPLOYEE_TABLE", "rag_employees")
 EMPLOYEE_LOOKUP_TOP_K = int(os.getenv("EMPLOYEE_LOOKUP_TOP_K", "5"))
 EMPLOYEE_RAG_MANDATORY = os.getenv("EMPLOYEE_RAG_MANDATORY", "true").lower() == "true"
@@ -102,25 +105,28 @@ EMPLOYEE_SEED_ON_STARTUP = os.getenv("EMPLOYEE_SEED_ON_STARTUP", "true").lower()
 
 
 # ---------------------------------------------------------------------------
-# Multi-Agent + MCP 配置
+# Multi-Agent + MCP configuration
 #
-# - ``MULTI_AGENT_ENABLED``：是否在 runtime 启动期装配多 Agent 图。任一
-#   关键依赖（如 langchain-mcp-adapters）缺失或 server 启动失败，会自动
-#   降级为 None，``mode=multi_agent`` 的请求会返回 503，rag/agent 不受影响。
-# - ``MCP_*_COMMAND`` / ``MCP_*_ARGS``：每个 MCP server 的 stdio 启动命令。
-#   按社区优先策略，weather 与 web_search 默认走开源 npm MCP server，需要
-#   本机安装 Node；business_calendar 走本项目自写的 Python MCP server。
-# - ``MCP_*_ENABLED``：单独控制某个 server 是否加入工具集；任何一个
-#   server 加载失败都不会阻塞其它 server。
+# - ``MULTI_AGENT_ENABLED``: whether to assemble the multi-agent graph at
+#   runtime startup. If any critical dependency (e.g. langchain-mcp-adapters)
+#   is missing or a server fails to start, this falls back to None and
+#   ``mode=multi_agent`` requests return 503; rag/agent are unaffected.
+# - ``MCP_*_COMMAND`` / ``MCP_*_ARGS``: stdio launch command for each MCP server.
+#   Following the community-first strategy, weather and web_search default
+#   to open-source npm MCP servers (require Node installed locally);
+#   business_calendar uses our own Python MCP server.
+# - ``MCP_*_ENABLED``: independently controls whether a server joins the
+#   tool set; failure of one server never blocks the others.
 # ---------------------------------------------------------------------------
 
 MULTI_AGENT_ENABLED = os.getenv("MULTI_AGENT_ENABLED", "true").lower() == "true"
 
-# 由 supervisor / policy / external / writer 子 Agent 共享的最大 ReAct 步数。
+# Maximum number of ReAct steps shared by supervisor / policy / external / writer sub-agents.
 MULTI_AGENT_RECURSION_LIMIT = int(os.getenv("MULTI_AGENT_RECURSION_LIMIT", "12"))
 
-# Weather MCP server（本项目自写，基于 Open-Meteo 免费 API，全球覆盖无需 API key）。
-# 若需切换回社区 npm server，可在 .env 里覆盖：
+# Weather MCP server (project-local, based on the free Open-Meteo API; global
+# coverage with no API key required).
+# To switch back to the community npm server, override in .env:
 #   MCP_WEATHER_COMMAND=npx
 #   MCP_WEATHER_ARGS=-y @h1deya/mcp-server-weather
 MCP_WEATHER_ENABLED = os.getenv("MCP_WEATHER_ENABLED", "true").lower() == "true"
@@ -130,7 +136,7 @@ MCP_WEATHER_ARGS = os.getenv(
     "-m backend.mcp_servers.weather_openmeteo",
 )
 
-# Brave Search MCP server。需要 BRAVE_API_KEY 才能成功调用。
+# Brave Search MCP server. Requires BRAVE_API_KEY to call successfully.
 MCP_BRAVE_SEARCH_ENABLED = (
     os.getenv("MCP_BRAVE_SEARCH_ENABLED", "true").lower() == "true"
 )
@@ -141,7 +147,7 @@ MCP_BRAVE_SEARCH_ARGS = os.getenv(
 )
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 
-# Business Calendar MCP server（本项目自写，基于 holidays 包）。
+# Business Calendar MCP server (project-local, based on the `holidays` package).
 MCP_BUSINESS_CALENDAR_ENABLED = (
     os.getenv("MCP_BUSINESS_CALENDAR_ENABLED", "true").lower() == "true"
 )
@@ -150,7 +156,8 @@ MCP_BUSINESS_CALENDAR_ARGS = os.getenv(
     "MCP_BUSINESS_CALENDAR_ARGS",
     "-m backend.mcp_servers.business_calendar",
 )
-# 业务日历默认地区（与示例 query "下周去奥克兰" 对齐）。
+# Default region for the business calendar (aligned with the example query
+# "next week in Auckland").
 BUSINESS_CALENDAR_DEFAULT_COUNTRY = os.getenv(
     "BUSINESS_CALENDAR_DEFAULT_COUNTRY", "NZ"
 )

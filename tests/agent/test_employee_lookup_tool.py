@@ -1,7 +1,9 @@
-"""``employee_lookup`` 工具单测：通过 fake store 注入，避免真实 PG。
+"""Unit tests for the ``employee_lookup`` tool.
 
-工具使用 ``InjectedToolCallId``，因此必须用 ToolCall 字典形式触发，
-让框架自动注入 tool_call_id；返回值是 ``Command``。
+A fake store is injected so we never touch a real Postgres database.
+The tool uses ``InjectedToolCallId`` so it must be triggered via the
+ToolCall dict form, letting the framework auto-inject ``tool_call_id``;
+the return value is a ``Command``.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ class _FakeStore:
 
 
 def _invoke(tool, args: dict) -> Command:
-    """触发 @tool 的标准 ToolCall 路径，由框架注入 tool_call_id。"""
+    """Trigger the standard @tool ToolCall path; the framework injects ``tool_call_id``."""
     return tool.invoke(
         {
             "name": "employee_lookup",
@@ -40,7 +42,7 @@ def _invoke(tool, args: dict) -> Command:
 
 
 def _command_observation(command: Command) -> dict:
-    """从 ``Command.update.messages`` 取出工具回执 JSON。"""
+    """Extract the tool-result JSON payload from ``Command.update.messages``."""
     update = command.update
     messages = update["messages"] if isinstance(update, dict) else []
     assert messages and isinstance(messages[0], ToolMessage)
@@ -66,12 +68,13 @@ def test_employee_lookup_returns_records_from_store():
     assert result["ok"] is True
     assert result["count"] == 1
     assert result["results"][0]["employee_id"] == "E1"
-    # store 收到的查询参数与签名一致。
+    # The store received the query arguments matching the tool signature.
     assert store.calls == [
         {"query": "alice", "department": None, "title": None, "limit": 5}
     ]
-    # Command 还要把员工记录作为 sources 写回 state，
-    # document_role 必须是 employee_structured，前端依赖该字段分区展示。
+    # The Command must also write employee records back to state as sources;
+    # document_role must be employee_structured so the frontend can partition
+    # the source list correctly.
     sources = command.update["sources"]
     assert sources and sources[0]["metadata"]["document_role"] == "employee_structured"
     assert sources[0]["metadata"]["employee_id"] == "E1"
@@ -85,7 +88,8 @@ def test_employee_lookup_returns_empty_when_no_match():
 
     assert result == {"ok": True, "count": 0, "results": []}
     assert store.calls[0]["department"] == "Engineering"
-    # 没命中时不应该写 sources，避免污染前端 source 列表。
+    # When there are no matches, sources must not be written, to avoid
+    # polluting the frontend source list.
     assert "sources" not in command.update
 
 

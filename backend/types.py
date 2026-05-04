@@ -6,7 +6,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class RagDocument:
-    """项目内统一使用的文档结构。"""
+    """Unified document structure used across the project."""
 
     page_content: str
     metadata: dict[str, Any] = field(default_factory=dict)

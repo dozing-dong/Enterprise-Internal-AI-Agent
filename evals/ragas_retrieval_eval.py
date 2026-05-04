@@ -22,7 +22,7 @@ from ragas.metrics import IDBasedContextPrecision, IDBasedContextRecall
 
 
 def deduplicate_preserve_order(values: list[str]) -> list[str]:
-    """对 context_id 去重，但保留第一次出现的顺序。"""
+    """Deduplicate context_ids while preserving first-seen order."""
     unique_values: list[str] = []
 
     for value in values:
@@ -39,7 +39,7 @@ async def evaluate_single_case_with_ragas(
     precision_metric: IDBasedContextPrecision,
     recall_metric: IDBasedContextRecall,
 ) -> dict:
-    """使用 RAGAS 评测单个问题的检索结果。"""
+    """Evaluate retrieval results for a single question using RAGAS."""
     question = case["question"]
     reference_context_ids = case["reference_context_ids"]
     retrieved_docs = retrieve_docs_node(question)
@@ -74,7 +74,7 @@ async def evaluate_retrieve_node_with_ragas(
     retrieve_docs_node: Callable[[str], list[RagDocument]],
     eval_cases: list[dict],
 ) -> list[dict]:
-    """使用 RAGAS 评测某一个 retrieve_docs 节点函数。"""
+    """Evaluate a single retrieve_docs node function using RAGAS."""
     case_results: list[dict] = []
     precision_metric = IDBasedContextPrecision()
     recall_metric = IDBasedContextRecall()
@@ -94,7 +94,7 @@ async def evaluate_retrieve_node_with_ragas(
 
 
 def summarize_ragas_results(case_results: list[dict]) -> dict:
-    """把逐题 RAGAS 结果汇总成平均分。"""
+    """Aggregate per-case RAGAS results into average scores."""
     total_cases = len(case_results)
 
     if total_cases == 0:
@@ -116,7 +116,7 @@ def summarize_ragas_results(case_results: list[dict]) -> dict:
 
 
 def summarize_ragas_results_by_category(case_results: list[dict]) -> dict[str, dict]:
-    """按问题类别汇总 RAGAS 结果。"""
+    """Aggregate RAGAS results grouped by question category."""
     grouped_results: dict[str, list[dict]] = {}
 
     for case_result in case_results:
@@ -130,34 +130,34 @@ def summarize_ragas_results_by_category(case_results: list[dict]) -> dict[str, d
 
 
 def print_case_results(case_results: list[dict]) -> None:
-    """打印逐题 RAGAS 结果。"""
+    """Print per-case RAGAS results."""
     for case_result in case_results:
         print("-" * 80)
-        print(f"案例编号: {case_result['case_id']}")
-        print(f"检索节点: {case_result['retrieve_node_name']}")
-        print(f"类别: {case_result['category']}")
-        print(f"问题: {case_result['question']}")
-        print(f"标准 context_id: {case_result['reference_context_ids']}")
-        print(f"召回 context_id: {case_result['retrieved_context_ids']}")
+        print(f"case_id: {case_result['case_id']}")
+        print(f"retrieve node: {case_result['retrieve_node_name']}")
+        print(f"category: {case_result['category']}")
+        print(f"question: {case_result['question']}")
+        print(f"reference context_ids: {case_result['reference_context_ids']}")
+        print(f"retrieved context_ids: {case_result['retrieved_context_ids']}")
         print(f"RAGAS Context Precision: {case_result['ragas_context_precision']:.4f}")
         print(f"RAGAS Context Recall: {case_result['ragas_context_recall']:.4f}")
 
 
 def print_summary(all_results: dict[str, list[dict]]) -> None:
-    """打印所有检索节点的 RAGAS 汇总结果。"""
+    """Print aggregated RAGAS results for every retrieve node."""
     print("\n" + "=" * 80)
-    print("RAGAS 检索评测汇总")
+    print("RAGAS retrieval evaluation summary")
     print("=" * 80)
 
     for retrieve_node_name, case_results in all_results.items():
         summary = summarize_ragas_results(case_results)
         category_summary = summarize_ragas_results_by_category(case_results)
 
-        print(f"检索节点: {retrieve_node_name}")
-        print(f"  题目总数: {summary['total_cases']}")
+        print(f"retrieve node: {retrieve_node_name}")
+        print(f"  total cases: {summary['total_cases']}")
         print(f"  RAGAS Context Precision: {summary['ragas_context_precision']:.4f}")
         print(f"  RAGAS Context Recall: {summary['ragas_context_recall']:.4f}")
-        print("  分类结果:")
+        print("  per-category results:")
 
         for category, category_result in category_summary.items():
             print(
@@ -171,7 +171,7 @@ def print_summary(all_results: dict[str, list[dict]]) -> None:
 
 
 async def main() -> None:
-    """执行基于 RAGAS 的公开数据集检索评测。"""
+    """Run the RAGAS-based retrieval evaluation."""
     print_eval_dataset_overview()
 
     documents = build_documents()
@@ -182,7 +182,7 @@ async def main() -> None:
 
     for retrieve_node_name, retrieve_docs_node in retrieve_nodes.items():
         print("\n" + "=" * 80)
-        print(f"开始 RAGAS 评测: {retrieve_node_name}")
+        print(f"Starting RAGAS evaluation: {retrieve_node_name}")
         print("=" * 80)
 
         case_results = await evaluate_retrieve_node_with_ragas(

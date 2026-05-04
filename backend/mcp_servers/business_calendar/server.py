@@ -1,11 +1,11 @@
-"""Business Calendar MCP server 实现。
+"""Business Calendar MCP server implementation.
 
-设计要点：
-- 使用 ``mcp`` 官方 Python SDK 的 ``FastMCP`` 高阶 API，三个工具直接以
-  Python 函数注册即可。
-- ``holidays`` 包按 ``country`` code 选择对应国家假日表（默认 NZ）。
-  对未知 country 自动降级为只判断周末。
-- 所有日期均按 ISO 8601 字符串处理（YYYY-MM-DD），便于跨语言调用。
+Design notes:
+- Uses the high-level ``FastMCP`` API from the official ``mcp`` Python SDK;
+  the three tools are registered as plain Python functions.
+- The ``holidays`` package selects the holiday table by ``country`` code
+  (default NZ). Unknown country codes degrade to weekend-only checks.
+- All dates are handled as ISO 8601 strings (YYYY-MM-DD) for cross-language compatibility.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _DEFAULT_COUNTRY = "NZ"
 
 
 def _get_country_holidays(country: str, year: int | None = None):
-    """按 country code 取一份 ``holidays`` 表；找不到则回退为空字典。"""
+    """Return a ``holidays`` table for the country code; falls back to an empty dict if not found."""
     try:
         import holidays as holidays_pkg
     except ImportError:  # pragma: no cover - hard dependency
@@ -149,7 +149,7 @@ def country_holidays(
 
 
 def main() -> None:
-    """以 stdio transport 启动 MCP server。"""
+    """Start the MCP server using stdio transport."""
     server.run()
 
 

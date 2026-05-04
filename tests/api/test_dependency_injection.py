@@ -1,8 +1,8 @@
-"""DI 回归测试：通过 set_runtime_factory + dependency_overrides 注入 fake runtime。
+"""DI regression tests: inject a fake runtime via set_runtime_factory + dependency_overrides.
 
-目标：
-- /、/health、/chat 三个端点全程不触发真实 pgvector / Bedrock 调用。
-- 验证 FastAPI 组合根（init_runtime + get_runtime）行为可被替换。
+Goals:
+- The /, /health, /chat endpoints never trigger real pgvector / Bedrock calls.
+- Verify that the FastAPI composition root (init_runtime + get_runtime) is replaceable.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 
 class _FakeRagGraph:
-    """同步 rag_graph 替身：``.invoke`` + ``.stream``。"""
+    """Synchronous rag_graph stand-in: ``.invoke`` + ``.stream``."""
 
     def invoke(self, payload):
         question = payload["question"]
@@ -31,7 +31,7 @@ class _FakeRagGraph:
         result = self.invoke(payload)
         from langchain_core.messages import AIMessageChunk
 
-        # 一次性把 sources 与 retrieval_question 通过 updates 注入。
+        # Inject sources and retrieval_question in a single updates chunk.
         yield (
             "updates",
             {
@@ -43,14 +43,14 @@ class _FakeRagGraph:
                 }
             },
         )
-        # 模拟最终生成节点的 token chunk。
+        # Simulate the token chunk emitted by the final generation node.
         chunk = AIMessageChunk(content=result["answer"])
         meta = {"langgraph_node": "generate_answer"}
         yield ("messages", (chunk, meta))
 
 
 def _build_fake_runtime() -> SimpleNamespace:
-    """构造一个无外部依赖的最小 DemoRuntime 替身。"""
+    """Build a minimal DemoRuntime stand-in with no external dependencies."""
     rag_graph = _FakeRagGraph()
     return SimpleNamespace(
         documents=[object()],

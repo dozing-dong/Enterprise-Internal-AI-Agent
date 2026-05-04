@@ -1,11 +1,11 @@
-"""AgentRunner：薄包装器，对外暴露异步流式接口。
+"""AgentRunner: a thin wrapper exposing an async streaming interface.
 
-orchestrator 通常直接消费 ``runtime.agent_graph.astream``，这里保留一个
-``AgentRunner`` 主要是为：
-- 让 ``runtime`` 与 ``orchestrator`` 之间通过明确的 facade 解耦；
-- 在未来想加 per-run 上下文（trace id 之类）时有插点。
+The orchestrator usually consumes ``runtime.agent_graph.astream`` directly;
+``AgentRunner`` is kept mainly to:
+- decouple ``runtime`` and ``orchestrator`` via an explicit facade;
+- provide an extension point for future per-run context (e.g. trace id).
 
-不再有非流式 ``run`` 与 RAG fallback。
+There is no longer a non-streaming ``run`` or RAG fallback.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from backend.storage.history import read_session_history
 
 
 class AgentRunner:
-    """编译好的 Agent LangGraph 的薄包装。"""
+    """Thin wrapper over a compiled agent LangGraph."""
 
     def __init__(self, graph: Any) -> None:
         self._graph = graph

@@ -31,7 +31,7 @@ def read_json_file(file_path: Path) -> list[dict]:
     with file_path.open("r", encoding="utf-8") as file:
         return json.load(file)
 
-#根据本地原始文档构建适合RAG的文档列表
+# Build a RAG-friendly list of documents from the local raw documents.
 @lru_cache(maxsize=1)
 def build_documents() -> list[RagDocument]:
     rows = read_json_file(LOCAL_EVAL_DOCUMENTS_PATH)
@@ -53,7 +53,7 @@ def build_documents() -> list[RagDocument]:
 
     return documents
 
-#根据本地原始评测样本构建适合RAG的评测样本列表
+# Build a RAG-friendly list of eval cases from the local raw eval samples.
 @lru_cache(maxsize=1)
 def build_eval_cases() -> list[dict]:
     rows = read_json_file(LOCAL_EVAL_CASES_PATH)
@@ -68,7 +68,7 @@ def build_eval_cases() -> list[dict]:
                 "question": row["question"],
                 "reference": row["reference"],
                 "reference_context_ids": row["reference_context_ids"],
-                "note": row.get("note", "项目内置自构造评测样本。"),
+                "note": row.get("note", "Built-in self-constructed eval sample."),
             }
         )
 
@@ -76,11 +76,11 @@ def build_eval_cases() -> list[dict]:
 
 
 def clear_document_caches() -> None:
-    """显式清空文档加载相关的 lru_cache。
+    """Explicitly clear the lru_cache entries used by document loading.
 
-    设计约束：
-    - 这些缓存仅是性能优化，不承担业务状态。
-    - 测试或热重载时调用以避免跨用例污染。
+    Design constraints:
+    - These caches are pure performance optimizations and hold no business state.
+    - Call this in tests or on hot reload to avoid cross-case pollution.
     """
     build_documents.cache_clear()
     build_eval_cases.cache_clear()

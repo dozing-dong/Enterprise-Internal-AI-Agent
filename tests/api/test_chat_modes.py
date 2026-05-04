@@ -1,12 +1,12 @@
-"""``POST /chat`` 与 ``POST /chat/stream`` 路由的端到端测试。
+"""End-to-end tests for the ``POST /chat`` and ``POST /chat/stream`` routes.
 
-策略：
-- mock 掉 ``backend.agent.graph.get_chat_model``，让 agent 不真的访问 Bedrock。
-- 用 fake rag_graph 与真实 ``build_agent_graph`` 装配 runtime；
-- 验证：
-  - ``POST /chat``（mode=rag）：直接走 fake rag_graph，断言聚合后的 ChatResponse。
-  - ``POST /chat``（mode=agent）：走 agent graph 的 ReAct 路径。
-  - ``POST /chat/stream``（mode=agent）：能拿到 ``sources`` 与 ``done(trace)`` 事件。
+Strategy:
+- mock ``backend.agent.graph.get_chat_model`` so the agent does not really hit Bedrock.
+- assemble the runtime with a fake rag_graph and the real ``build_agent_graph``.
+- verify:
+  - ``POST /chat`` (mode=rag): goes straight through the fake rag_graph; assert the aggregated ChatResponse.
+  - ``POST /chat`` (mode=agent): exercises the agent graph's ReAct path.
+  - ``POST /chat/stream`` (mode=agent): receives ``sources`` and ``done(trace)`` events.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from langchain_core.messages import AIMessage
 
 
 class _FakeRagGraph:
-    """同步 rag_graph 替身。``.invoke`` 模拟一次完整 RAG 流水线。"""
+    """Synchronous rag_graph stand-in. ``.invoke`` simulates one full RAG pipeline."""
 
     def __init__(self, *, sources=None, answer="rag-pipeline-answer", retrieval=None):
         self._sources = sources or [
@@ -43,9 +43,9 @@ class _FakeRagGraph:
         }
 
     def stream(self, payload, *, stream_mode):
-        """简化版：把 invoke 的结果一次性合并为 ``updates`` 块。"""
+        """Simplified: merge the invoke result into a single ``updates`` chunk."""
         result = self.invoke(payload)
-        # 模拟 finalize 节点的 updates payload
+        # Simulate the updates payload from the finalize node.
         yield (
             "updates",
             {
@@ -57,7 +57,7 @@ class _FakeRagGraph:
                 }
             },
         )
-        # token：模拟 generate_answer 节点的 messages chunk
+        # tokens: simulate the messages chunk emitted by the generate_answer node.
         from langchain_core.messages import AIMessageChunk
 
         chunk = AIMessageChunk(content=result["answer"])
@@ -66,7 +66,7 @@ class _FakeRagGraph:
 
 
 class _FakeChatModel:
-    """Agent 节点用的 fake ChatModel，按脚本返回 AIMessage。"""
+    """Fake ChatModel used by the Agent node; returns scripted AIMessages in order."""
 
     def __init__(self, scripted):
         self._scripted = list(scripted)
@@ -119,7 +119,7 @@ def _build_runtime(monkeypatch, *, scripted_agent_messages):
 
 @pytest.fixture
 def make_client(monkeypatch):
-    """工厂：每个用例自己定脚本，返回 (client, runtime)。"""
+    """Factory: each test defines its own script and gets back (client, runtime)."""
     from backend.api import dependencies as deps_module
     from backend.api.app import app
     from backend.runtime import create_demo_runtime
@@ -247,7 +247,7 @@ def test_chat_stream_agent_mode_emits_sources_and_done(make_client):
 
 
 def test_chat_agent_mode_returns_500_on_planner_error(make_client):
-    """删除 fallback 后，agent 异常应当冒成 5xx；POST /chat 通过 RagException 表达。"""
+    """After removing the fallback, an agent exception should bubble up as 5xx; POST /chat surfaces it via RagException."""
 
     class _BoomModel:
         def bind_tools(self, _tools):
@@ -311,7 +311,7 @@ def test_chat_agent_mode_returns_500_on_planner_error(make_client):
 
 
 def _parse_sse(text: str):
-    """把 SSE 流文本拆成 [(event, json_payload)] 列表。"""
+    """Split the SSE stream text into a list of [(event, json_payload)] tuples."""
     import json
 
     out: list[tuple[str, dict]] = []

@@ -1,13 +1,15 @@
-"""Multi-Agent 共享状态。
+"""Multi-Agent shared state.
 
-设计要点：
-- ``MultiAgentState`` 是顶层 LangGraph 的 channels；Supervisor 与三个子图
-  共享同一份 state，子图通过返回 dict 写回 ``policy_result`` /
-  ``external_result`` 等字段。
-- 为了支持 Policy / External 并行 fan-out，``policy_result`` 与
-  ``external_result`` 通过 ``_keep_latest`` reducer 接收子图返回值；
-  ``sources`` / ``agents_invoked`` 用合并去重 reducer。
-- 该模块**不**依赖 ``backend.agent``，避免单 / 多 Agent 包之间形成循环。
+Design notes:
+- ``MultiAgentState`` defines the channels of the top-level LangGraph;
+  the Supervisor and the three subgraphs share this single state, with
+  subgraphs writing back fields like ``policy_result`` / ``external_result``
+  via returned dicts.
+- To support Policy / External fan-out, ``policy_result`` and
+  ``external_result`` use the ``_keep_latest`` reducer; ``sources`` and
+  ``agents_invoked`` use a deduplicating merge reducer.
+- This module **does not** depend on ``backend.agent``, avoiding a cycle
+  between the single- and multi-agent packages.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from backend.multi_agent.policy import Plan
 
 
 def _source_key(item: Any) -> tuple:
-    """生成 sources 项的去重键（与 backend.agent.graph 形态一致）。"""
+    """Generate a deduplication key for a sources item (matches backend.agent.graph)."""
     if not isinstance(item, dict):
         return ("__non_dict__", id(item))
     metadata = item.get("metadata") or {}
@@ -35,7 +37,7 @@ def _source_key(item: Any) -> tuple:
 
 
 def _merge_unique_sources(left: list, right: list) -> list:
-    """LangGraph reducer：sources 按 ``_source_key`` 去重后追加。"""
+    """LangGraph reducer: append sources after deduplication via ``_source_key``."""
     if not right:
         return list(left or [])
 
@@ -52,7 +54,7 @@ def _merge_unique_sources(left: list, right: list) -> list:
 
 
 def _append_unique_strings(left: list[str], right: list[str]) -> list[str]:
-    """LangGraph reducer：``agents_invoked`` 按出现顺序追加，去重。"""
+    """LangGraph reducer: ``agents_invoked`` appended in order with deduplication."""
     if not right:
         return list(left or [])
 
@@ -67,14 +69,14 @@ def _append_unique_strings(left: list[str], right: list[str]) -> list[str]:
 
 
 def _keep_latest(left: Any, right: Any) -> Any:
-    """LangGraph reducer：用新值覆盖旧值，None 不视为覆盖。"""
+    """LangGraph reducer: overwrite the old value with the new one; None is not treated as overwrite."""
     return right if right is not None else left
 
 
 class MultiAgentState(TypedDict, total=False):
-    """顶层 multi-agent 图共享的状态。
+    """State shared by the top-level multi-agent graph.
 
-    所有 sub-agent 都通过返回部分 dict 来更新这些 channel。
+    All sub-agents update these channels by returning a partial dict.
     """
 
     question: str
@@ -100,7 +102,7 @@ def build_initial_multi_agent_state(
     session_id: str,
     history: list[dict] | None = None,
 ) -> MultiAgentState:
-    """构造一份新对话回合的初始 state。"""
+    """Build the initial state for a new conversation turn."""
     return MultiAgentState(  # type: ignore[typeddict-item]
         question=question,
         session_id=session_id,

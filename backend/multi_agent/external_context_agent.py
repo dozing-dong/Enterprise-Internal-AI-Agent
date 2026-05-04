@@ -1,14 +1,16 @@
-"""ExternalContextAgent subgraph：通过 MCP 工具拉外部信息。
+"""ExternalContextAgent subgraph: fetch external info via MCP tools.
 
-设计要点：
-- 工具集来自 ``backend.mcp.load_external_mcp_tools()``：weather / web_search /
-  business_calendar 等。工具在子图构造期注入；运行期不再 reload。
-- 子图依然是一个微型 ReAct（``agent`` ⇄ ``tools`` 循环），但只接 MCP 工具，
-  不接 RAG / 员工目录。
-- 没拿到任何 MCP 工具时（环境无 Node / API key 全缺）子图自动降级为
-  "直接产出 'no external tools available' 的纯文本结果"，依然返回结构化
-  ``external_result``，不阻塞 Writer。
-- 通过 tag ``agent_external`` 标记 LLM 调用，便于 orchestrator 过滤。
+Design notes:
+- The tool set comes from ``backend.mcp.load_external_mcp_tools()``:
+  weather / web_search / business_calendar etc. Tools are injected at
+  subgraph construction time and not reloaded at runtime.
+- The subgraph is a tiny ReAct (``agent`` <-> ``tools`` loop) but only
+  binds MCP tools-not RAG or the employee directory.
+- When no MCP tools are obtained (no Node available, all API keys
+  missing), the subgraph automatically degrades to "directly produce a
+  plain-text 'no external tools available' result", still returns a
+  structured ``external_result`` and does not block the Writer.
+- LLM calls are tagged with ``agent_external`` so the orchestrator can filter them.
 """
 
 from __future__ import annotations
@@ -39,11 +41,11 @@ EXTERNAL_AGENT_TAG = "agent_external"
 
 
 class _ExternalSubState(TypedDict, total=False):
-    """ExternalContextAgent 子图内部 state。
+    """ExternalContextAgent subgraph internal state.
 
-    用 ``messages`` 作为 channel 名，与 PolicyAgent 子图保持一致：MCP 工具
-    返回标准 ``ToolMessage``，由 ToolNode 默认 append 到 ``messages``，无需
-    自定义 messages_key。
+    Uses ``messages`` as the channel name to match the PolicyAgent
+    subgraph: MCP tools return standard ``ToolMessage`` objects, which
+    ToolNode appends to ``messages`` by default-no custom messages_key needed.
     """
 
     question: str
@@ -55,15 +57,16 @@ class _ExternalSubState(TypedDict, total=False):
 
 
 def build_external_subgraph(mcp_tools: list[Any] | None):
-    """构造 ExternalContextAgent 子图。
+    """Build the ExternalContextAgent subgraph.
 
-    ``mcp_tools`` 为空 / None 时，返回的节点只输出降级文本，不调用 LLM。
+    When ``mcp_tools`` is empty / None, the returned node just produces
+    fallback text and does not call the LLM.
     """
 
     tools = list(mcp_tools or [])
 
     if not tools:
-        # 无外部工具 → 纯降级路径，直接组装一个空的 external_result。
+        # No external tools -> pure fallback path; assemble an empty external_result.
         def fallback_node(state: MultiAgentState) -> dict[str, Any]:
             return {
                 "external_result": {
@@ -108,7 +111,7 @@ def build_external_subgraph(mcp_tools: list[Any] | None):
     tool_node = ToolNode(tools, handle_tool_errors=lambda e: f"Tool error: {e}")
 
     def finalize(state: _ExternalSubState) -> dict[str, Any]:
-        """把内部 messages 压成 external_result。"""
+        """Compress the internal messages into an external_result."""
         answer_text = ""
         tool_calls: list[dict] = []
         by_id: dict[str, dict] = {}
@@ -147,7 +150,7 @@ def build_external_subgraph(mcp_tools: list[Any] | None):
         return {"answer": answer_text, "tool_calls": tool_calls}
 
     def route_after_agent(state: _ExternalSubState) -> str:
-        """自定义条件：根据子图自己的 ``messages`` 判断是否还要调工具。"""
+        """Custom condition: decide whether to call tools based on the subgraph's own ``messages``."""
         messages = state.get("messages") or []
         if messages:
             last = messages[-1]

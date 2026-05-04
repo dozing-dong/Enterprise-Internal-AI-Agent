@@ -1,10 +1,12 @@
-"""文档重排序模块。
+"""Document reranking module.
 
-把召回阶段拿到的候选文档，按 query 相关度做精排后只保留 top_k。
-对外提供统一的 ``Reranker`` 抽象，当前内置 Bedrock Rerank 实现。
+Reranks the candidate documents from the recall stage by query
+relevance and keeps only the top_k. Provides a unified ``Reranker``
+abstraction; currently has a built-in Bedrock Rerank implementation.
 
-调用方在 reranker 不可用时（API 异常 / 候选为空）会自动回退到截断后的原始顺序，
-不会让整条 RAG 链路因为重排失败而中断。
+When the reranker is unavailable (API exception / no candidates), the
+caller automatically falls back to the truncated original order, so the
+RAG pipeline does not break because rerank failed.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ RerankFn = Callable[[str, list[RagDocument], int], list[RagDocument]]
 
 @dataclass(slots=True)
 class Reranker:
-    """轻量重排器协议，统一不同后端实现的调用入口。"""
+    """Lightweight reranker protocol unifying the entry point across backends."""
 
     rerank_fn: RerankFn
 
@@ -49,14 +51,14 @@ def _attach_rerank_score(doc: RagDocument, score: float, rank: int) -> RagDocume
 
 
 def _fallback_truncate(docs: list[RagDocument], top_k: int) -> list[RagDocument]:
-    """重排失败时的兜底：保持原顺序截断到 top_k。"""
+    """Fallback for rerank failures: keep the original order, truncated to top_k."""
     return list(docs[:top_k])
 
 
 def build_bedrock_reranker(
     model_id: str = BEDROCK_RERANK_MODEL_ID,
 ) -> Reranker:
-    """构建一个调用 Bedrock Rerank API 的重排器。"""
+    """Build a reranker that calls the Bedrock Rerank API."""
 
     def rerank_fn(query: str, docs: list[RagDocument], top_k: int) -> list[RagDocument]:
         documents = [doc.page_content for doc in docs]
@@ -70,12 +72,12 @@ def build_bedrock_reranker(
             )
         except Exception as exc:
             logger.warning(
-                "Bedrock rerank 调用失败，回退到原始顺序截断: %s", exc,
+                "Bedrock rerank call failed; falling back to original-order truncation: %s", exc,
             )
             return _fallback_truncate(docs, top_k)
 
         if not scored:
-            logger.warning("Bedrock rerank 返回空结果，回退到原始顺序截断。")
+            logger.warning("Bedrock rerank returned an empty result; falling back to original-order truncation.")
             return _fallback_truncate(docs, top_k)
 
         reranked: list[RagDocument] = []
@@ -87,12 +89,13 @@ def build_bedrock_reranker(
 
 
 def build_reranker(backend: str) -> Reranker:
-    """根据配置选择重排实现。
+    """Pick a reranker implementation based on configuration.
 
-    目前仅支持 ``bedrock``；后续要扩展本地 cross-encoder / LLM rerank 时，
-    在这里加分支即可，调用侧无需感知差异。
+    Currently only ``bedrock`` is supported; to extend with a local
+    cross-encoder / LLM rerank, add a branch here-callers do not need
+    to be aware of the difference.
     """
     backend_normalized = (backend or "").strip().lower()
     if backend_normalized == "bedrock":
         return build_bedrock_reranker()
-    raise ValueError(f"未知的 RERANK_BACKEND: {backend!r}")
+    raise ValueError(f"Unknown RERANK_BACKEND: {backend!r}")

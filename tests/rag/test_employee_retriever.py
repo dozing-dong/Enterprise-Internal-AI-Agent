@@ -1,11 +1,12 @@
-"""员工结构化检索的单元测试。
+"""Unit tests for structured employee retrieval.
 
-策略：
-- 不连接真实 PostgreSQL，通过 ``safe_search_employees`` 与一个内存版
-  duck-typed store 验证：
-  - DB 异常 / store 为空都返回空列表（“查不到可忽略”语义）。
-  - ``employee_records_to_documents`` 输出的 metadata 满足 RAG 合并约定。
-- ``EmployeeStore.search`` 对空 query/department/title 直接返回空。
+Strategy:
+- Do not connect to a real PostgreSQL; verify via ``safe_search_employees``
+  with an in-memory duck-typed store that:
+  - DB exceptions / a None store both return an empty list ("miss-is-fine" semantics).
+  - ``employee_records_to_documents`` output has metadata that matches
+    the RAG merge convention.
+- ``EmployeeStore.search`` returns empty when query/department/title are all empty.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ def test_safe_search_swallows_store_errors():
 
 
 def test_employee_store_search_short_circuits_on_empty_filters():
-    """空 query 且无 department/title 过滤时，连 DB 都不会去访问。"""
+    """When query is empty and no department/title filter is given, the DB is not even hit."""
     store = EmployeeStore(connection_string="postgresql://invalid:5432/db")
     assert store.search("", department=None, title=None) == []
     assert store.search(None) == []
@@ -53,11 +54,12 @@ def test_records_to_documents_metadata_shape():
     docs = employee_records_to_documents(records, query="Test")
     assert len(docs) == 1
     doc = docs[0]
-    # page_content 必须包含核心字段，便于 RAG generate 时直接引用。
+    # page_content must contain the core fields so the RAG generation
+    # step can cite them directly.
     assert "Test User" in doc.page_content
     assert "Engineering" in doc.page_content
     assert "Senior Engineer" in doc.page_content
-    # metadata 必须满足下游 rag chain 的约定：
+    # metadata must satisfy the downstream rag chain convention.
     assert doc.metadata["document_role"] == "employee_structured"
     assert doc.metadata["context_id"] == "employee_E9001"
     assert doc.metadata["source"] == "employee_directory"
@@ -66,15 +68,24 @@ def test_records_to_documents_metadata_shape():
 
 
 def test_extract_name_hint_from_chinese_self_intro_sentence():
-    query = "我叫 Alice Carter，要去外地出差，根据我的公司信息生成应该注意的 policy"
+    # Chinese self-introduction kept as Unicode escapes; this fixture
+    # exercises the bilingual name-hint extraction.
+    query = (
+        "\u6211\u53eb Alice Carter\uff0c\u8981\u53bb\u5916\u5730\u51fa\u5dee\uff0c"
+        "\u6839\u636e\u6211\u7684\u516c\u53f8\u4fe1\u606f\u751f\u6210\u5e94\u8be5\u6ce8\u610f\u7684 policy"
+    )
     assert _extract_name_hint(query) == "Alice Carter"
 
 
 def test_build_query_patterns_prioritizes_name_tokens():
-    query = "我叫 Alice Carter，要去外地出差，根据我的公司信息生成应该注意的 policy"
+    query = (
+        "\u6211\u53eb Alice Carter\uff0c\u8981\u53bb\u5916\u5730\u51fa\u5dee\uff0c"
+        "\u6839\u636e\u6211\u7684\u516c\u53f8\u4fe1\u606f\u751f\u6210\u5e94\u8be5\u6ce8\u610f\u7684 policy"
+    )
     patterns = _build_query_patterns(query)
-    # 第一优先应是姓名短语，避免只拿整句 `%...%` 去匹配。
+    # The top priority should be the name phrase, avoiding a wholesale
+    # ``%...%`` match against the entire sentence.
     assert patterns[0] == "Alice Carter"
-    # 关键 token 也应被拆出来，提升模糊匹配命中率。
+    # Key tokens should also be split out to improve fuzzy match recall.
     assert "Alice" in patterns
     assert "Carter" in patterns

@@ -30,7 +30,7 @@ def ensure_vectorstore_ready():
 
     if get_vector_document_count(vectorstore) == 0:
         raise RuntimeError(
-            "未找到可用的向量索引。请先运行 `python build_index.py` 构建索引。"
+            "No usable vector index was found. Please run `python build_index.py` first to build the index."
         )
 
     return vectorstore
@@ -198,28 +198,28 @@ def summarize_results_by_category(case_results: list[dict]) -> dict[str, dict]:
 
 def print_eval_dataset_overview() -> None:
     print("=" * 80)
-    print("评测集说明")
+    print("Eval dataset overview")
     print("=" * 80)
-    print("当前使用数据集：project_local_eval")
-    print("知识库来源：项目内置自构造知识库文档")
-    print("问题来源：项目内置自构造问答评测集")
-    print(f"默认 embedding model：{BEDROCK_EMBEDDING_MODEL_ID}")
-    print(f"执行模式：{EXECUTION_MODE}")
-    print(f"模型 provider：{MODEL_PROVIDER}")
-    print(f"向量后端：{VECTOR_BACKEND}")
-    print(f"当前评测题目数：{len(EVAL_CASES)}")
-    print("说明：reference_context_ids 为显式标注的参考上下文。")
+    print("Current dataset: project_local_eval")
+    print("Knowledge base source: built-in project knowledge base documents")
+    print("Question source: built-in project QA eval set")
+    print(f"Default embedding model: {BEDROCK_EMBEDDING_MODEL_ID}")
+    print(f"Execution mode: {EXECUTION_MODE}")
+    print(f"Model provider: {MODEL_PROVIDER}")
+    print(f"Vector backend: {VECTOR_BACKEND}")
+    print(f"Number of eval cases: {len(EVAL_CASES)}")
+    print("Note: reference_context_ids contains the explicitly labeled reference contexts.")
 
 
 def print_case_results(case_results: list[dict]) -> None:
     for case_result in case_results:
         print("-" * 80)
-        print(f"案例编号: {case_result['case_id']}")
-        print(f"检索节点: {case_result['retrieve_node_name']}")
-        print(f"类别: {case_result['category']}")
-        print(f"问题: {case_result['question']}")
-        print(f"标准 context_id: {case_result['reference_context_ids']}")
-        print(f"召回 context_id: {case_result['retrieved_context_ids']}")
+        print(f"case_id: {case_result['case_id']}")
+        print(f"retrieve node: {case_result['retrieve_node_name']}")
+        print(f"category: {case_result['category']}")
+        print(f"question: {case_result['question']}")
+        print(f"reference context_ids: {case_result['reference_context_ids']}")
+        print(f"retrieved context_ids: {case_result['retrieved_context_ids']}")
         print(f"Recall@1: {case_result['recall_at_1']:.4f}")
         print(f"Recall@3: {case_result['recall_at_3']:.4f}")
         print(f"Precision@1: {case_result['precision_at_1']:.4f}")
@@ -229,21 +229,21 @@ def print_case_results(case_results: list[dict]) -> None:
 
 def print_summary(all_results: dict[str, list[dict]]) -> None:
     print("\n" + "=" * 80)
-    print("检索评测汇总")
+    print("Retrieval evaluation summary")
     print("=" * 80)
 
     for retrieve_node_name, case_results in all_results.items():
         summary = summarize_results(case_results)
         category_summary = summarize_results_by_category(case_results)
 
-        print(f"检索节点: {retrieve_node_name}")
-        print(f"  题目总数: {summary['total_cases']}")
+        print(f"retrieve node: {retrieve_node_name}")
+        print(f"  total cases: {summary['total_cases']}")
         print(f"  Recall@1: {summary['recall_at_1']:.4f}")
         print(f"  Recall@3: {summary['recall_at_3']:.4f}")
         print(f"  Precision@1: {summary['precision_at_1']:.4f}")
         print(f"  Precision@3: {summary['precision_at_3']:.4f}")
         print(f"  MRR: {summary['mrr']:.4f}")
-        print("  分类结果:")
+        print("  per-category results:")
 
         for category, category_result in category_summary.items():
             print(

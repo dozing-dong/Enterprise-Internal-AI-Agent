@@ -1,12 +1,12 @@
-"""RAG LangGraph：rewrite -> hybrid retrieve -> rerank -> generate -> persist。
+"""RAG LangGraph: rewrite -> hybrid retrieve -> rerank -> generate -> persist.
 
-设计要点：
-- ``generate_answer`` 节点用 ``ChatBedrockConverse.invoke``，外层在
-  ``stream_mode=["messages","updates"]`` 下能自动捕获 ``AIMessageChunk``，
-  无需手写流式逻辑。
-- 节点完成事件（``updates``）会带上每一步的 ``tool_trace`` 增量，
-  供 orchestrator 聚合成统一的 trace 列表。
-- 入口函数命名为 ``build_rag_graph``，返回编译后的 LangGraph 应用。
+Design notes:
+- The ``generate_answer`` node uses ``ChatBedrockConverse.invoke``; the
+  outer caller can capture ``AIMessageChunk`` automatically under
+  ``stream_mode=["messages","updates"]`` without writing custom streaming logic.
+- Node completion events (``updates``) carry per-step ``tool_trace``
+  increments that the orchestrator aggregates into a unified trace list.
+- The entry function is ``build_rag_graph`` and returns the compiled LangGraph application.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ class GraphState(TypedDict, total=False):
 
 
 def _doc_signature(document: RagDocument) -> tuple[str, str]:
-    """与 retrievers._doc_key 一致的去重键，避免引用循环。"""
+    """Dedup key matching ``retrievers._doc_key``; defined here to avoid a circular import."""
     context_id = str(document.metadata.get("context_id", ""))
     return context_id, document.page_content
 
@@ -76,7 +76,7 @@ def _merge_unique_docs(
     primary: list[RagDocument],
     secondary: list[RagDocument],
 ) -> list[RagDocument]:
-    """按 ``_doc_signature`` 去重：``primary`` 在前，``secondary`` 在后。"""
+    """Deduplicate by ``_doc_signature``: ``primary`` first, then ``secondary``."""
     seen: set[tuple[str, str]] = set()
     merged: list[RagDocument] = []
     for source in (primary, secondary):
@@ -101,14 +101,16 @@ def build_rag_graph(
     employee_store: EmployeeStore | None = None,
     employee_top_k: int = EMPLOYEE_LOOKUP_TOP_K,
 ):
-    """构建并编译 RAG LangGraph。
+    """Build and compile the RAG LangGraph.
 
-    返回的对象同时支持 ``.invoke({...})`` 与 ``.stream/.astream(stream_mode=...)``。
-    供 ``RagAnswerTool`` 同步调用、orchestrator 流式调用复用。
+    The returned object supports both ``.invoke({...})`` and
+    ``.stream/.astream(stream_mode=...)``, used by ``RagAnswerTool`` for
+    synchronous calls and by the orchestrator for streaming.
 
-    若注入 ``employee_store``，每轮会执行一次结构化员工检索（与向量、
-    关键字检索并行），命中结果被合并进 ``retrieved_docs`` 并在 rerank
-    后强制保留；查不到不影响主流程。
+    If ``employee_store`` is injected, each turn runs a structured
+    employee lookup once (in parallel with vector and keyword retrieval);
+    matched results are merged into ``retrieved_docs`` and forcibly
+    preserved after rerank. A miss does not affect the main flow.
     """
     chat_model = get_chat_model(temperature=0.0)
     graph = StateGraph(GraphState)
@@ -168,11 +170,13 @@ def build_rag_graph(
         }
 
     def employee_retrieve(state: GraphState) -> dict:
-        """每轮固定执行的员工结构化检索。
+        """Structured employee lookup that runs every turn.
 
-        - ``employee_store`` 未注入时直接返回空，节点保持 no-op。
-        - 任何错误被 ``safe_search_employees`` 吞掉为空结果，避免阻断
-          主链路；查不到也算正常。
+        - When ``employee_store`` is not injected, returns immediately;
+          the node is a no-op.
+        - Any error is swallowed by ``safe_search_employees`` into an
+          empty result, avoiding interruption of the main pipeline; a
+          miss is still considered normal.
         """
         if employee_store is None:
             return {"employee_docs": []}
@@ -180,8 +184,9 @@ def build_rag_graph(
         original_question = state["question"]
         retrieval_question = state.get("retrieval_question", original_question)
 
-        # 员工识别优先看用户原问题（通常含“我叫 xxx”），
-        # 若未命中再回退到 rewrite 后的查询。
+        # Employee identification preferentially looks at the user's
+        # original question (it usually contains "my name is xxx");
+        # if no hit, fall back to the rewritten query.
         records = safe_search_employees(
             employee_store,
             original_question,
@@ -217,8 +222,10 @@ def build_rag_graph(
             keyword_docs,
             top_k=top_k,
         )
-        # 员工结构化结果是“必查证据”，强制置顶并去重。
-        # 命中为空时此步等价于 fused 不变，符合“查不到可忽略”的语义。
+        # Structured employee results are "must-include evidence"; force
+        # them to the top and dedup. When there is no hit, this step is
+        # equivalent to ``fused`` unchanged, matching the
+        # "ignore-on-miss" semantic.
         docs = _merge_unique_docs(employee_docs, fused)
         return {
             "retrieved_docs": docs,
@@ -245,8 +252,9 @@ def build_rag_graph(
         retrieval_question = state.get("retrieval_question", state["question"])
         reranked = reranker.invoke(retrieval_question, candidates, final_k)
 
-        # 员工结构化命中视为“必查证据”，rerank 后强制保留并置顶；
-        # 即使其相关性分较低，也不允许被裁剪掉。
+        # Treat structured employee hits as "must-include evidence";
+        # force them to be preserved and pinned to the top after rerank,
+        # even if their relevance score is low.
         employee_docs = state.get("employee_docs", [])
         final_docs = _merge_unique_docs(employee_docs, reranked)
 
@@ -299,7 +307,7 @@ def build_rag_graph(
         text = _coerce_to_text(ai_msg.content)
 
         return {
-            "answer": text or "没有生成可用回答。",
+            "answer": text or "Failed to generate a usable answer.",
             "tool_trace": [
                 {
                     "tool": "generate_answer",
@@ -320,7 +328,7 @@ def build_rag_graph(
 
     def finalize(state: GraphState) -> dict:
         return {
-            "answer": state.get("answer", "没有生成可用回答。"),
+            "answer": state.get("answer", "Failed to generate a usable answer."),
             "sources": state.get("sources", []),
             "original_question": state["question"],
             "retrieval_question": state.get("retrieval_question", state["question"]),
@@ -366,7 +374,7 @@ def build_rag_graph(
 
 
 def _coerce_to_text(content) -> str:
-    """Bedrock Converse 的 ``content`` 可能是字符串，也可能是 block 列表。"""
+    """Bedrock Converse ``content`` may be a string or a list of blocks."""
     if isinstance(content, list):
         parts: list[str] = []
         for block in content:

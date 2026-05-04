@@ -1,17 +1,17 @@
-"""Agent LangGraph 的单元测试。
+"""Unit tests for the Agent LangGraph.
 
-策略：
-- 通过 monkeypatch 替换 ``backend.llm.chat_models.get_chat_model``，
-  返回一个 fake ChatModel：
-  - ``invoke``：按脚本返回 ``AIMessage``（含 / 不含 ``tool_calls``）。
-  - ``stream``：按脚本 yield ``AIMessageChunk``。
-  - ``bind_tools(...)``：返回自身，便于复用脚本。
-  - ``with_config(...)``：返回自身。
-- 用 ``MemoryHistoryStore`` 隔离历史副作用。
-- 通过 ``runtime.agent_graph`` 直接驱动，验证：
-  - 工具决策路径（rag_answer + final answer）。
-  - 仅询问时间的 ``current_time`` 路径。
-  - sources 被注入回 state；trace 累积到 collector。
+Strategy:
+- monkeypatch ``backend.llm.chat_models.get_chat_model`` to return a fake
+  ChatModel:
+  - ``invoke``: returns scripted ``AIMessage``s (with / without ``tool_calls``).
+  - ``stream``: yields scripted ``AIMessageChunk``s.
+  - ``bind_tools(...)``: returns self for script reuse.
+  - ``with_config(...)``: returns self.
+- Use ``MemoryHistoryStore`` to isolate history side effects.
+- Drive ``runtime.agent_graph`` directly to verify:
+  - the tool-routing path (rag_answer + final answer).
+  - the time-only ``current_time`` path.
+  - sources are written back to state; trace accumulates to the collector.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 
 @pytest.fixture(autouse=True)
 def memory_history():
-    """每个用例独立的内存历史，避免跨用例残留。"""
+    """Independent in-memory history per test to avoid cross-test leakage."""
     from backend.storage import history as history_module
 
     history_module.set_history_store(history_module.MemoryHistoryStore())
@@ -40,7 +40,7 @@ def memory_history():
 
 
 class _FakeChatModel:
-    """只实现 LangGraph 节点所需的最小接口的 fake ChatModel。"""
+    """Fake ChatModel that implements only the minimal surface used by the LangGraph nodes."""
 
     def __init__(self, scripted_messages: Iterable[AIMessage]) -> None:
         self._scripted = list(scripted_messages)
@@ -74,10 +74,12 @@ def _build_runtime(
     rag_answer_payload=None,
     employee_records=None,
 ):
-    """构造一个全 fake 的 agent_graph。
+    """Build a fully faked agent_graph.
 
-    rag_answer_payload：当 agent 调用 rag_answer 工具时，rag 子调用返回的结果。
-    employee_records：当 agent 调用 employee_lookup 工具时，fake store 返回的记录。
+    rag_answer_payload: result returned by the fake rag sub-call when the
+        agent invokes the rag_answer tool.
+    employee_records: records returned by the fake store when the agent
+        invokes the employee_lookup tool.
     """
     from backend.agent import (
         build_agent_graph,
@@ -118,7 +120,7 @@ def _build_runtime(
 
 
 def _drive_agent_via_orchestrator(agent_graph, *, question, session_id, mode="agent"):
-    """用 ChatOrchestrator 驱动一次 agent 流式调用，收集 SSE 风格事件。"""
+    """Drive a single streaming agent call via ChatOrchestrator and collect SSE-style events."""
     from types import SimpleNamespace
 
     from backend.api.schemas import ChatStreamRequest
@@ -196,10 +198,11 @@ def test_agent_graph_routes_through_rag_answer_tool(monkeypatch):
 
 
 def test_agent_graph_combines_employee_lookup_and_rag(monkeypatch):
-    """模拟 “我叫xxx, 要出差……” 场景：
-    Agent 第 1 步调用 employee_lookup 拿到部门/职位，
-    第 2 步调用 rag_answer 拿到差旅条款，
-    最终 sources 同时包含两类（结构化 + KB），并且 reducer 不会互相覆盖。
+    """Simulate the "I'm xxx, I need to travel..." scenario:
+    Step 1: the agent calls employee_lookup to get department/title.
+    Step 2: the agent calls rag_answer to get travel policy snippets.
+    Final sources must contain both kinds (structured + KB), and the
+    reducer must not overwrite either side.
     """
     from backend.rag.employee_retriever import EmployeeRecord
 
@@ -274,7 +277,7 @@ def test_agent_graph_combines_employee_lookup_and_rag(monkeypatch):
         s for s in sources
         if s.get("metadata", {}).get("document_role") == "reference_context"
     ]
-    # 两类 sources 必须并存：结构化 DB 命中 + KB 命中。
+    # Both kinds of sources must coexist: structured DB hits + KB hits.
     assert structured, "employee_lookup result must survive in sources"
     assert kb, "rag_answer result must survive in sources"
     assert structured[0]["metadata"]["employee_id"] == "E1001"
@@ -371,7 +374,7 @@ def test_orchestrator_agent_stream_yields_sources_and_done_with_trace(monkeypatc
 
 
 def test_orchestrator_agent_stream_falls_through_on_error(monkeypatch):
-    """模型抛错时，stream 以 error 事件结束，不再有 RAG 兜底。"""
+    """When the model raises, the stream ends with an error event and there is no RAG fallback."""
 
     class _BoomModel:
         def bind_tools(self, _tools):

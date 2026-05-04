@@ -1,7 +1,8 @@
-"""Agent 决策层。
+"""Agent decision layer.
 
-把现有 RAG 流水线封装为一个 LangChain ``@tool`` (``rag_answer``)，
-通过 LangGraph 的 ReAct 循环让模型自主选择工具完成回答。
+Wraps the existing RAG pipeline into a LangChain ``@tool`` (``rag_answer``)
+and uses LangGraph's ReAct loop to let the model autonomously choose tools
+to produce an answer.
 """
 
 from backend.agent.builtin_tools import (

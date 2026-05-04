@@ -1,9 +1,9 @@
-"""项目自写的 MCP server 集合。
+"""Project-local MCP server implementations.
 
-每个 server 都是一个可执行 Python 模块，使用 mcp Python SDK 暴露
-工具给 ``langchain-mcp-adapters`` 客户端通过 stdio 调用。
+Each server is an executable Python module that uses the MCP Python SDK
+to expose tools to the ``langchain-mcp-adapters`` client over stdio.
 
-子模块：
-- ``business_calendar``：基于 ``holidays`` 包的工作日 / 节假日工具集，
-  默认地区 NZ。
+Submodules:
+- ``business_calendar``: business-day / public-holiday tools backed by the
+  ``holidays`` package; default region NZ.
 """

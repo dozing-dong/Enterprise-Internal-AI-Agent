@@ -1,12 +1,16 @@
-"""会话元数据存储。
+"""Session metadata storage.
 
-设计要点：
-- 通过 ``SessionStore`` 协议抽象不同后端，与 history.py 同样的模式。
-- 默认使用 PostgreSQL（与 pgvector / 历史共用同一个数据库连接配置）。
-- ``MemorySessionStore`` 仅用于单元测试隔离，不作为生产后端。
-- 顶层函数 ``create_session`` / ``list_sessions`` / ``rename_session`` /
-  ``delete_session`` / ``touch_session`` / ``get_session`` 保持简洁的过程式 API。
-- delete 会级联清理 ``rag_chat_history``。
+Design notes:
+- Abstracts different backends behind the ``SessionStore`` protocol,
+  using the same pattern as history.py.
+- Uses PostgreSQL by default (sharing the same database connection
+  configuration as pgvector / history).
+- ``MemorySessionStore`` is for unit-test isolation only and is not a
+  production backend.
+- Top-level helpers ``create_session`` / ``list_sessions`` /
+  ``rename_session`` / ``delete_session`` / ``touch_session`` /
+  ``get_session`` keep a concise procedural API.
+- delete cascades and clears ``rag_chat_history``.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ DEFAULT_SESSION_TITLE = "New Chat"
 
 @dataclass
 class SessionRecord:
-    """单条会话元数据。"""
+    """A single session metadata record."""
 
     session_id: str
     title: str
@@ -50,7 +54,7 @@ class SessionRecord:
 
 
 class SessionStore(Protocol):
-    """会话元数据存储协议。"""
+    """Session metadata storage protocol."""
 
     def create(self, session_id: str, title: str = DEFAULT_SESSION_TITLE) -> SessionRecord: ...
 
@@ -70,7 +74,7 @@ class SessionStore(Protocol):
 
 
 class MemorySessionStore:
-    """内存实现，主要用于单元测试隔离。"""
+    """In-memory implementation, primarily for unit-test isolation."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, SessionRecord] = {}
@@ -143,14 +147,14 @@ class MemorySessionStore:
 
 
 class PostgresSessionStore:
-    """基于 PostgreSQL 的会话元数据实现。
+    """PostgreSQL-backed session metadata implementation.
 
-    表结构（启动时通过 ``CREATE TABLE IF NOT EXISTS`` 建立）：
+    Schema (created via ``CREATE TABLE IF NOT EXISTS`` at startup):
     - session_id  TEXT PRIMARY KEY
     - title       TEXT NOT NULL DEFAULT 'New Chat'
     - created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     - updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-    索引：(updated_at DESC)
+    Index: (updated_at DESC)
     """
 
     def __init__(
@@ -168,7 +172,7 @@ class PostgresSessionStore:
         try:
             import psycopg
         except ImportError as exc:
-            raise ImportError("缺少 psycopg 依赖，无法使用 PostgreSQL 会话存储。") from exc
+            raise ImportError("psycopg is required to use PostgreSQL session storage.") from exc
         return psycopg.connect(_normalize_pg_connection_string(self._connection_string))
 
     def _ensure_table(self, connection) -> None:
@@ -332,8 +336,8 @@ def _build_default_store() -> SessionStore:
         return MemorySessionStore()
 
     raise ValueError(
-        f"未知的 HISTORY_BACKEND={HISTORY_BACKEND!r}，"
-        "可选值：postgres / memory。"
+        f"Unknown HISTORY_BACKEND={HISTORY_BACKEND!r}; "
+        "valid values: postgres / memory."
     )
 
 
@@ -342,14 +346,14 @@ _store_lock = threading.Lock()
 
 
 def set_session_store(store: SessionStore) -> None:
-    """主要给测试用：手动注入一个存储实现。"""
+    """Mainly for tests: manually inject a storage implementation."""
     global _current_store
     with _store_lock:
         _current_store = store
 
 
 def reset_session_store() -> None:
-    """清空当前注册的存储，下次调用时按配置重新创建。"""
+    """Drop the currently registered store; the next call rebuilds from configuration."""
     global _current_store
     with _store_lock:
         _current_store = None
@@ -365,42 +369,42 @@ def _resolve_store() -> SessionStore:
 
 
 def generate_session_id() -> str:
-    """生成规范化的 session_id（UUID4 hex，32 字符）。"""
+    """Generate a normalized session_id (UUID4 hex, 32 characters)."""
     return uuid.uuid4().hex
 
 
 def create_session(title: str = DEFAULT_SESSION_TITLE) -> SessionRecord:
-    """创建一个新会话，自动生成 session_id。"""
+    """Create a new session with an auto-generated session_id."""
     return _resolve_store().create(generate_session_id(), title)
 
 
 def create_session_if_missing(
     session_id: str, title: str = DEFAULT_SESSION_TITLE
 ) -> SessionRecord:
-    """确保 session_id 存在；用于流式聊天前的兜底。"""
+    """Ensure session_id exists; used as a safety net before streaming chat."""
     return _resolve_store().create_if_missing(session_id, title)
 
 
 def get_session(session_id: str) -> SessionRecord | None:
-    """读取单条会话元数据。"""
+    """Read a single session metadata record."""
     return _resolve_store().get(session_id)
 
 
 def list_sessions() -> list[SessionRecord]:
-    """按 updated_at 倒序列出所有会话。"""
+    """List all sessions in descending order of updated_at."""
     return _resolve_store().list()
 
 
 def rename_session(session_id: str, title: str) -> SessionRecord | None:
-    """重命名会话。"""
+    """Rename a session."""
     return _resolve_store().rename(session_id, title)
 
 
 def touch_session(session_id: str) -> None:
-    """更新 updated_at，让会话浮到列表顶部。"""
+    """Update updated_at so the session bubbles to the top of the list."""
     _resolve_store().touch(session_id)
 
 
 def delete_session(session_id: str) -> None:
-    """删除会话元数据并级联清理历史。"""
+    """Delete session metadata and cascade-clean its history."""
     _resolve_store().delete(session_id)

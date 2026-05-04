@@ -1,15 +1,17 @@
-"""PolicyAgent subgraph：内部差旅 / 报销 / 审批知识检索。
+"""PolicyAgent subgraph: internal travel / expense / approval knowledge retrieval.
 
-设计要点：
-- 复用现有的 ``rag_answer`` 工具（由 ``backend.agent.builtin_tools``
-  提供）。PolicyAgent 自己跑一个微型 ReAct 循环，确保模型真的去调
-  RAG 而不是凭空生成。
-- 子图运行结束后把 ``policy_result``（``answer`` / ``sources`` /
-  ``retrieval_question``）写回顶层 ``MultiAgentState``，并追加
-  ``"policy"`` 到 ``agents_invoked``。
-- 子图内部使用一个**独立**的 messages channel（``inner_messages``）
-  避免污染 supervisor / writer 看到的对话；只把工具产出的 sources
-  合并到顶层 sources。
+Design notes:
+- Reuses the existing ``rag_answer`` tool (provided by
+  ``backend.agent.builtin_tools``). The PolicyAgent runs its own tiny
+  ReAct loop to ensure the model actually calls RAG instead of
+  fabricating content.
+- After the subgraph completes, write ``policy_result`` (``answer`` /
+  ``sources`` / ``retrieval_question``) back into the top-level
+  ``MultiAgentState`` and append ``"policy"`` to ``agents_invoked``.
+- The subgraph uses an **independent** internal messages channel
+  (``inner_messages``) to avoid polluting the conversation seen by the
+  supervisor / writer; only the sources produced by tools are merged
+  into the top-level sources.
 """
 
 from __future__ import annotations
@@ -47,12 +49,13 @@ POLICY_AGENT_TAG = "agent_policy"
 
 
 class _PolicySubState(TypedDict, total=False):
-    """PolicyAgent 子图内部 state。
+    """PolicyAgent subgraph internal state.
 
-    使用 ``messages`` 作为 channel 名（而非 inner_messages）：
-    rag_answer 工具的 ``Command(update={"messages": [...]})`` 是硬编码
-    使用 ``messages`` 这个名字的，子图必须沿用以兼容。子图 state 与
-    父图 state 是相互独立的命名空间，不会互相污染。
+    Uses ``messages`` as the channel name (not inner_messages):
+    the rag_answer tool's ``Command(update={"messages": [...]})`` hard-codes
+    the ``messages`` channel name, so the subgraph must follow suit for
+    compatibility. The subgraph state and the parent graph state are
+    independent namespaces and do not pollute each other.
     """
 
     question: str
@@ -64,7 +67,7 @@ class _PolicySubState(TypedDict, total=False):
 
 
 def build_policy_subgraph(rag_graph: Any):
-    """构造 PolicyAgent 子图。``rag_graph`` 是已编译的 RAG LangGraph。"""
+    """Build the PolicyAgent subgraph. ``rag_graph`` is the compiled RAG LangGraph."""
 
     rag_answer_tool = build_rag_answer_tool(rag_graph)
     tools = [rag_answer_tool]
@@ -87,7 +90,7 @@ def build_policy_subgraph(rag_graph: Any):
                 ),
             ]
         else:
-            # 保证 system prompt 始终在最前。
+            # Ensure the system prompt always sits at the front.
             if not isinstance(messages[0], SystemMessage):
                 messages = [SystemMessage(POLICY_SYSTEM_PROMPT), *messages]
 
@@ -97,7 +100,7 @@ def build_policy_subgraph(rag_graph: Any):
     tool_node = ToolNode(tools, handle_tool_errors=lambda e: f"Tool error: {e}")
 
     def finalize(state: _PolicySubState) -> dict[str, Any]:
-        """把内部对话压成 policy_result，并提取 final answer 字符串。"""
+        """Compress the internal conversation into policy_result and extract the final answer string."""
         answer_text = ""
         for msg in reversed(state.get("messages") or []):
             if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
@@ -108,7 +111,7 @@ def build_policy_subgraph(rag_graph: Any):
         return {"answer": answer_text, "retrieval_question": retrieval_question}
 
     def route_after_agent(state: _PolicySubState) -> str:
-        """自定义条件：根据子图自己的 ``messages`` 判断是否还要调工具。"""
+        """Custom condition: decide whether to call tools based on the subgraph's own ``messages``."""
         messages = state.get("messages") or []
         if messages:
             last = messages[-1]
@@ -131,7 +134,7 @@ def build_policy_subgraph(rag_graph: Any):
     inner_compiled = inner.compile()
 
     def policy_node(state: MultiAgentState) -> dict[str, Any]:
-        """顶层节点：调用子图，返回写回顶层 state 的部分 dict。"""
+        """Top-level node: invoke the subgraph and return a partial dict to merge back into the top-level state."""
         sub_input = _PolicySubState(  # type: ignore[typeddict-item]
             question=state.get("question") or "",
             session_id=state.get("session_id") or "",
@@ -159,9 +162,9 @@ def build_policy_subgraph(rag_graph: Any):
         answer_text = result.get("answer") or ""
         retrieval_q = result.get("retrieval_question") or state.get("question") or ""
 
-        # 把内部 ReAct 的 tool 调用 + 结果抽成纯 dict，附在 policy_result
-        # 里给 orchestrator 用，便于在顶层 trace 里渲染按 sub-agent 归属的
-        # 工具调用条目。
+        # Extract the internal ReAct's tool calls + results into pure dicts,
+        # attached to policy_result for the orchestrator to render
+        # sub-agent-attributed tool-call entries in the top-level trace.
         tool_calls = _extract_tool_calls_from_messages(result.get("messages") or [])
 
         update: dict[str, Any] = {
@@ -182,9 +185,9 @@ def build_policy_subgraph(rag_graph: Any):
 
 
 def _extract_tool_calls_from_messages(messages: list[Any]) -> list[dict]:
-    """从子图 messages 列表里抽出（call, result）配对成 dict。
+    """Pull (call, result) pairs out of the subgraph's messages list as dicts.
 
-    返回结构与 ExternalContextAgent 对齐：
+    The returned shape mirrors that of ExternalContextAgent:
     ``[{"name": ..., "args": ..., "id": ..., "ok": True, "result": ...}, ...]``
     """
     calls: list[dict] = []
@@ -233,7 +236,7 @@ def _extract_tool_calls_from_messages(messages: list[Any]) -> list[dict]:
 
 
 def _flatten_text(content: Any) -> str:
-    """把 ChatBedrockConverse 的 content（可能是 list）展平为字符串。"""
+    """Flatten a ChatBedrockConverse content (which can be a list) into a string."""
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):

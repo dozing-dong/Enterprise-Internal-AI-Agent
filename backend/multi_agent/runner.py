@@ -1,7 +1,8 @@
-"""MultiAgentRunner：薄包装器，给 orchestrator 提供同步 / 异步流式接口。
+"""MultiAgentRunner: thin wrapper providing sync / async streaming for the orchestrator.
 
-形态与 [backend/agent/runner.py](backend/agent/runner.py:1) 保持一致，便于
-orchestrator 通过同样的协议消费两套图（``stream`` + ``astream``）。
+Mirrors [backend/agent/runner.py](backend/agent/runner.py:1) so the
+orchestrator can consume both graphs through the same protocol
+(``stream`` + ``astream``).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from backend.storage.history import read_session_history
 
 
 class MultiAgentRunner:
-    """编译好的多 Agent LangGraph 的薄包装。"""
+    """Thin wrapper over a compiled multi-agent LangGraph."""
 
     def __init__(self, graph: Any) -> None:
         self._graph = graph

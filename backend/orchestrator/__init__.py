@@ -1,4 +1,4 @@
-"""流程编排层：按 mode 调度 RAG / Agent，统一会话元数据与流式收尾。"""
+"""Flow orchestration layer: dispatches RAG / Agent by mode and unifies session metadata and stream finalization."""
 
 from backend.orchestrator.chat_orchestrator import ChatOrchestrator, OrchestratorStreamEvent
 

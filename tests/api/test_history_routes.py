@@ -1,9 +1,10 @@
-"""``/chat`` 与 ``/history/{session_id}`` 的端到端回归。
+"""End-to-end regression for ``/chat`` and ``/history/{session_id}``.
 
-通过：
-- 注入 fake runtime 让 ``/chat`` 不触发真实的 RAG 链路；
-- 注入 ``MemoryHistoryStore`` 让历史读写不依赖 PostgreSQL；
-模拟一次完整对话：写入历史 -> 读取 -> 清空。
+This test:
+- injects a fake runtime so ``/chat`` does not trigger the real RAG chain;
+- injects ``MemoryHistoryStore`` so history reads/writes do not depend on
+  PostgreSQL;
+and simulates a full conversation: write history -> read -> clear.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from fastapi.testclient import TestClient
 
 
 class _FakeRagGraph:
-    """fake rag_graph：``.invoke`` 真正写历史；``.stream`` 复用之，并产出 token。"""
+    """Fake rag_graph: ``.invoke`` actually writes history; ``.stream`` reuses it and emits tokens."""
 
     def invoke(self, payload):
         from backend.storage.history import append_session_messages

@@ -1,12 +1,13 @@
-"""FastAPI 依赖注入函数。
+"""FastAPI dependency injection helpers.
 
-所有路由通过 Depends(get_runtime) 获取运行时对象，
-不直接引用模块级变量，便于测试时通过 dependency_overrides 替换。
+All routes obtain the runtime object via Depends(get_runtime) instead of
+referencing module-level variables directly, which lets tests swap it via
+dependency_overrides.
 
-组合根策略：
-- `_runtime_factory` 决定如何构建 DemoRuntime，默认 = create_demo_runtime。
-- `set_runtime_factory()` 允许在扩展场景下替换工厂。
-- `reset_runtime()` 用于测试隔离，强制下次 init 重新构建。
+Composition root strategy:
+- `_runtime_factory` decides how to build DemoRuntime; default = create_demo_runtime.
+- `set_runtime_factory()` allows replacing the factory in extension scenarios.
+- `reset_runtime()` is used for test isolation, forcing the next init to rebuild.
 """
 
 from typing import Callable
@@ -21,29 +22,29 @@ _runtime_factory: RuntimeFactory = create_demo_runtime
 
 
 def set_runtime_factory(factory: RuntimeFactory) -> None:
-    """替换运行时构建工厂，仅在 init_runtime 之前调用才会生效。"""
+    """Replace the runtime factory; only takes effect when called before init_runtime."""
     global _runtime_factory
     _runtime_factory = factory
 
 
 def init_runtime() -> None:
-    """在应用 lifespan 启动阶段调用，预热并持有运行时对象。"""
+    """Called during the application's lifespan startup; warms up and holds the runtime."""
     global _runtime
     _runtime = _runtime_factory()
 
 
 def reset_runtime() -> None:
-    """清空已注册的运行时对象，主要服务于测试隔离。"""
+    """Clear the registered runtime object; mainly for test isolation."""
     global _runtime
     _runtime = None
 
 
 def get_runtime() -> DemoRuntime:
-    """FastAPI 依赖函数，返回已初始化的运行时对象。
+    """FastAPI dependency that returns the initialized runtime object.
 
-    如果 lifespan 启动阶段没有成功初始化，会抛出 RuntimeError，
-    触发全局异常处理器返回 503。
+    If lifespan startup did not initialize successfully, raises RuntimeError,
+    which is mapped to a 503 response by the global exception handler.
     """
     if _runtime is None:
-        raise RuntimeError("运行时尚未初始化，请检查应用启动日志。")
+        raise RuntimeError("Runtime is not initialized; check the application startup logs.")
     return _runtime

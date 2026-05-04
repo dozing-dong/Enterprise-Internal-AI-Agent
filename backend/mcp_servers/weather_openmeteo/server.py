@@ -42,7 +42,7 @@ def _wmo_desc(code: int | None) -> str:
 
 
 def _geocode(city: str) -> dict[str, Any] | None:
-    """返回 {name, latitude, longitude, country, timezone} 或 None。"""
+    """Return {name, latitude, longitude, country, timezone} or None."""
     try:
         resp = httpx.get(
             _GEO_URL,
@@ -186,7 +186,7 @@ def get_weather_forecast(city: str, days: int = 7) -> dict[str, Any]:
 
 
 def main() -> None:
-    """以 stdio transport 启动 MCP server。"""
+    """Start the MCP server using stdio transport."""
     server.run()
 
 

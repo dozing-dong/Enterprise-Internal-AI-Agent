@@ -1,9 +1,9 @@
-"""Multi-Agent 顶层 LangGraph 装配。
+"""Multi-Agent top-level LangGraph assembly.
 
-拓扑：
-- 入口 ``supervisor`` → 条件 fan-out → ``policy`` 与/或 ``external`` → ``writer`` → END。
-- ``policy`` / ``external`` 都是单节点子图 wrapper（内部各自有微型 ReAct）。
-- ``writer`` 是唯一带 ``WRITER_TAG`` 的可见生成节点。
+Topology:
+- Entry ``supervisor`` -> conditional fan-out -> ``policy`` and/or ``external`` -> ``writer`` -> END.
+- ``policy`` / ``external`` are single-node subgraph wrappers (each containing a tiny ReAct).
+- ``writer`` is the only visible generation node tagged with ``WRITER_TAG``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from backend.multi_agent.writer_agent import WRITER_TAG, build_writer_node
 from backend.rag.employee_retriever import EmployeeStore
 
 
-# Re-export 给 orchestrator 用作 token 过滤 tag。
+# Re-exported for the orchestrator to use as a token-filtering tag.
 __all__ = ["WRITER_TAG", "build_multi_agent_graph"]
 
 
@@ -32,15 +32,16 @@ def build_multi_agent_graph(
     employee_store: EmployeeStore | None,
     employee_top_k: int = EMPLOYEE_LOOKUP_TOP_K,
 ):
-    """装配并编译多 Agent 顶层 LangGraph。
+    """Assemble and compile the top-level multi-agent LangGraph.
 
-    依赖项：
-    - ``rag_graph``：已编译的 RAG LangGraph，PolicyAgent 通过 ``rag_answer``
-      工具调用它。
-    - ``mcp_tools``：``backend.mcp.load_external_mcp_tools()`` 的产物；为空
-      时 ExternalContextAgent 自动降级为"无外部工具"。
-    - ``employee_store``：员工目录；Supervisor 仅在 ``Plan.needs_employee_lookup``
-      为真时才会查一次。
+    Dependencies:
+    - ``rag_graph``: the compiled RAG LangGraph; the PolicyAgent calls it via
+      the ``rag_answer`` tool.
+    - ``mcp_tools``: the output of ``backend.mcp.load_external_mcp_tools()``;
+      when empty, the ExternalContextAgent automatically degrades to "no
+      external tools".
+    - ``employee_store``: the employee directory; the Supervisor only queries
+      it when ``Plan.needs_employee_lookup`` is true.
     """
 
     supervisor_node = build_supervisor_node(
@@ -68,7 +69,7 @@ def build_multi_agent_graph(
             if getattr(plan, "use_external", False):
                 targets.append("external")
         if not targets:
-            # 既不需要 policy 也不需要 external → 直接交给 writer。
+            # Neither policy nor external is needed -> hand off directly to writer.
             return ["writer"]
         return targets
 
@@ -78,8 +79,9 @@ def build_multi_agent_graph(
         {"policy": "policy", "external": "external", "writer": "writer"},
     )
 
-    # Policy / External 都是父图节点（不是 subgraph node），langgraph 会按
-    # add_conditional_edges 的并行 fan-out 触发它们；都汇合到 writer。
+    # Policy / External are parent-graph nodes (not subgraph nodes); langgraph
+    # triggers them in parallel via the fan-out from add_conditional_edges,
+    # both converging into writer.
     graph.add_edge("policy", "writer")
     graph.add_edge("external", "writer")
     graph.add_edge("writer", END)

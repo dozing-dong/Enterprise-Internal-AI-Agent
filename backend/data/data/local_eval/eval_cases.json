@@ -1,794 +1,761 @@
 [
   {
-    "case_id": "local_001",
-    "category": "definition",
+    "case_id": "policy_001_01",
+    "category": "expense",
     "difficulty": "easy",
-    "question": "??? RAG?",
-    "reference": "RAG ??????????????????????????",
+    "question": "According to the policy, within how many days after the expense is incurred must an employee submit a reimbursement request?",
+    "reference": "According to Chapter 4 Article 8, employees must submit reimbursement requests within 30 calendar days after the expense occurs.",
     "reference_context_ids": [
-      "local_ctx_001"
+      "policy_expense_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Employee Travel and Expense Reimbursement Policy"
   },
   {
-    "case_id": "local_002",
-    "category": "definition",
-    "difficulty": "easy",
-    "question": "????? RAG ???????????",
-    "reference": "??? RAG ????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_001"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_003",
-    "category": "definition",
+    "case_id": "policy_001_02",
+    "category": "expense",
     "difficulty": "medium",
-    "question": "RAG ???????????????????",
-    "reference": "???? RAG ????????????????????????????????????????",
+    "question": "Which approvers must review a single reimbursement request of 3500 CNY?",
+    "reference": "According to Chapter 3 Article 6, a single reimbursement above 1000 CNY and up to 5000 CNY requires two-level approval by the direct manager and the department head.",
     "reference_context_ids": [
-      "local_ctx_001"
+      "policy_expense_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Employee Travel and Expense Reimbursement Policy"
   },
   {
-    "case_id": "local_004",
-    "category": "definition",
-    "difficulty": "medium",
-    "question": "???? RAG ????????????",
-    "reference": "???????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_001"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_005",
-    "category": "architecture",
-    "difficulty": "easy",
-    "question": "?????????????????",
-    "reference": "??????????????????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_002"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_006",
-    "category": "architecture",
-    "difficulty": "easy",
-    "question": "????????????",
-    "reference": "???????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_002"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_007",
-    "category": "architecture",
-    "difficulty": "easy",
-    "question": "?????????????",
-    "reference": "??????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_002"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_008",
-    "category": "architecture",
-    "difficulty": "medium",
-    "question": "????????????????????",
-    "reference": "????????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_002"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_009",
-    "category": "cleaning",
-    "difficulty": "easy",
-    "question": "???????????????",
-    "reference": "?????????????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_003"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_010",
-    "category": "cleaning",
-    "difficulty": "medium",
-    "question": "??????????????????",
-    "reference": "?????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_003"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_011",
-    "category": "cleaning",
-    "difficulty": "medium",
-    "question": "?????????????????????",
-    "reference": "??????????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_003"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_012",
-    "category": "cleaning",
-    "difficulty": "easy",
-    "question": "?????????????????",
-    "reference": "?????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_003"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_013",
-    "category": "chunking",
-    "difficulty": "medium",
-    "question": "chunk_size ? chunk_overlap ???????",
-    "reference": "chunk_size ?????????????chunk_overlap ????????????????",
-    "reference_context_ids": [
-      "local_ctx_004"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_014",
-    "category": "chunking",
-    "difficulty": "medium",
-    "question": "? chunk ?? chunk ??????????",
-    "reference": "? chunk ????????????????? chunk ????????????????????",
-    "reference_context_ids": [
-      "local_ctx_004"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_015",
-    "category": "chunking",
-    "difficulty": "easy",
-    "question": "?????????? overlap?",
-    "reference": "?? overlap ????????????????",
-    "reference_context_ids": [
-      "local_ctx_004"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_016",
-    "category": "chunking",
-    "difficulty": "medium",
-    "question": "???????????????",
-    "reference": "????????? chunk ??????????????????????",
-    "reference_context_ids": [
-      "local_ctx_004"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_017",
-    "category": "retrieval",
-    "difficulty": "easy",
-    "question": "???????????????",
-    "reference": "??????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_005"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_018",
-    "category": "retrieval",
-    "difficulty": "easy",
-    "question": "BM25 ??????",
-    "reference": "BM25 ?????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_005"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_019",
-    "category": "retrieval",
-    "difficulty": "medium",
-    "question": "???????????????? BM25?",
-    "reference": "????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_005"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_020",
-    "category": "retrieval",
-    "difficulty": "medium",
-    "question": "????????????????????????",
-    "reference": "??????????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_005"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_021",
-    "category": "hybrid",
-    "difficulty": "easy",
-    "question": "????????????",
-    "reference": "???????????? BM25 ?????????",
-    "reference_context_ids": [
-      "local_ctx_006"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_022",
-    "category": "hybrid",
-    "difficulty": "medium",
-    "question": "???????????",
-    "reference": "????????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_006"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_023",
-    "category": "hybrid",
-    "difficulty": "medium",
-    "question": "????????????????",
-    "reference": "???????????????????????",
-    "reference_context_ids": [
-      "local_ctx_006"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_024",
-    "category": "hybrid",
-    "difficulty": "easy",
-    "question": "????????????????",
-    "reference": "???????????????",
-    "reference_context_ids": [
-      "local_ctx_006"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_025",
-    "category": "rewrite",
-    "difficulty": "easy",
-    "question": "????????????????",
-    "reference": "????????????",
-    "reference_context_ids": [
-      "local_ctx_007"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_026",
-    "category": "rewrite",
-    "difficulty": "medium",
-    "question": "???????????",
-    "reference": "?????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_007"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_027",
-    "category": "rewrite",
-    "difficulty": "medium",
-    "question": "??????????????????????",
-    "reference": "????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_007"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_028",
-    "category": "rewrite",
-    "difficulty": "medium",
-    "question": "?????????????????",
-    "reference": "?????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_007"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_029",
-    "category": "rerank",
-    "difficulty": "easy",
-    "question": "rerank ??????????",
-    "reference": "rerank ??????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_008"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_030",
-    "category": "rerank",
-    "difficulty": "medium",
-    "question": "??? rerank ??????????",
-    "reference": "????????????rerank ???????",
-    "reference_context_ids": [
-      "local_ctx_008"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_031",
-    "category": "rerank",
-    "difficulty": "medium",
-    "question": "?????????rerank ???????",
-    "reference": "????????????????",
-    "reference_context_ids": [
-      "local_ctx_008"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_032",
-    "category": "rerank",
-    "difficulty": "easy",
-    "question": "rerank ?????????",
-    "reference": "rerank ????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_008"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_033",
-    "category": "evaluation",
-    "difficulty": "medium",
-    "question": "Recall@K ?????",
-    "reference": "Recall@K ??? K ??????????????????",
-    "reference_context_ids": [
-      "local_ctx_009"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_034",
-    "category": "evaluation",
-    "difficulty": "medium",
-    "question": "Precision@K ?????",
-    "reference": "Precision@K ??? K ???????????????",
-    "reference_context_ids": [
-      "local_ctx_009"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_035",
-    "category": "evaluation",
-    "difficulty": "medium",
-    "question": "MRR ?????",
-    "reference": "MRR ?????????????????",
-    "reference_context_ids": [
-      "local_ctx_009"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_036",
-    "category": "evaluation",
+    "case_id": "policy_001_03",
+    "category": "expense",
     "difficulty": "hard",
-    "question": "RAGAS ? IDBasedContextPrecision ? IDBasedContextRecall ???????",
-    "reference": "???????????? context_id ??? context_id?",
+    "question": "On a single trip an employee incurs 800 CNY in meals, 2000 CNY in accommodation, and 500 CNY in office supplies. How should each of these three expenses be approved for reimbursement?",
+    "reference": "The 800 CNY meal expense and the 500 CNY office supply expense are both at or below 1000 CNY, so each only needs direct manager approval. The 2000 CNY accommodation expense is above 1000 CNY but at or below 5000 CNY, so it requires two-level approval by the direct manager and the department head. Each expense is approved according to the rule for its own amount.",
     "reference_context_ids": [
-      "local_ctx_009"
+      "policy_expense_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Employee Travel and Expense Reimbursement Policy"
   },
   {
-    "case_id": "local_037",
-    "category": "history",
+    "case_id": "policy_002_01",
+    "category": "leave",
     "difficulty": "easy",
-    "question": "session_id ??????????????",
-    "reference": "session_id ????????????????????",
+    "question": "According to the policy, what documentation is required when sick leave exceeds three consecutive days?",
+    "reference": "According to Chapter 2 Article 3, sick leave longer than three consecutive days requires a certificate from a qualified medical institution.",
     "reference_context_ids": [
-      "local_ctx_010"
+      "policy_leave_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Employee Leave and Time Off Policy"
   },
   {
-    "case_id": "local_038",
-    "category": "history",
+    "case_id": "policy_002_02",
+    "category": "leave",
     "difficulty": "medium",
-    "question": "??????????? JSON ????????",
-    "reference": "???????????????",
+    "question": "Whose approval is required for an employee taking 1.5 days of leave?",
+    "reference": "According to Chapter 3 Article 5, leave above one day and up to three days requires approval from both the direct manager and the department head.",
     "reference_context_ids": [
-      "local_ctx_010"
+      "policy_leave_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Employee Leave and Time Off Policy"
   },
   {
-    "case_id": "local_039",
-    "category": "history",
-    "difficulty": "medium",
-    "question": "?? JSON ????????????",
-    "reference": "???????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_010"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_040",
-    "category": "history",
-    "difficulty": "easy",
-    "question": "?????? JSON ??????????",
-    "reference": "??????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_010"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_041",
-    "category": "failure_handling",
-    "difficulty": "easy",
-    "question": "?????????????????????",
-    "reference": "????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_011"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_042",
-    "category": "failure_handling",
-    "difficulty": "medium",
-    "question": "??? RAG ????????????????",
-    "reference": "?? RAG ???????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_011"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_043",
-    "category": "failure_handling",
-    "difficulty": "medium",
-    "question": "?????????????????",
-    "reference": "??????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_011"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_044",
-    "category": "failure_handling",
-    "difficulty": "easy",
-    "question": "??????? RAG ??????",
-    "reference": "?????????????????",
-    "reference_context_ids": [
-      "local_ctx_011"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_045",
-    "category": "validation",
-    "difficulty": "easy",
-    "question": "??????????????????????????",
-    "reference": "????????? embedding ??? Chroma ????",
-    "reference_context_ids": [
-      "local_ctx_012"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_046",
-    "category": "validation",
-    "difficulty": "medium",
-    "question": "?????????????? rerank ? query rewrite?",
-    "reference": "????????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_012"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_047",
-    "category": "validation",
-    "difficulty": "easy",
-    "question": "??????????????????",
-    "reference": "???????????BM25?????? RAGAS ???",
-    "reference_context_ids": [
-      "local_ctx_012"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_048",
-    "category": "validation",
-    "difficulty": "medium",
-    "question": "?????????????????",
-    "reference": "??????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_012"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_049",
-    "category": "metadata",
-    "difficulty": "easy",
-    "question": "?????????????? context_id?",
-    "reference": "????? context_id ?????????",
-    "reference_context_ids": [
-      "local_ctx_013"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_050",
-    "category": "metadata",
-    "difficulty": "easy",
-    "question": "source ????????",
-    "reference": "source ?????????",
-    "reference_context_ids": [
-      "local_ctx_013"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_051",
-    "category": "metadata",
-    "difficulty": "medium",
-    "question": "title ? document_role ????????",
-    "reference": "title ??????document_role ??????????????",
-    "reference_context_ids": [
-      "local_ctx_013"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_052",
-    "category": "metadata",
-    "difficulty": "medium",
-    "question": "?????????????????",
-    "reference": "??????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_013"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_053",
-    "category": "indexing",
-    "difficulty": "easy",
-    "question": "???????????????",
-    "reference": "???????????????",
-    "reference_context_ids": [
-      "local_ctx_014"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_054",
-    "category": "indexing",
-    "difficulty": "medium",
-    "question": "?????????????????",
-    "reference": "??????????????????",
-    "reference_context_ids": [
-      "local_ctx_014"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_055",
-    "category": "indexing",
-    "difficulty": "medium",
-    "question": "Windows ??????????????",
-    "reference": "????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_014"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_056",
-    "category": "indexing",
-    "difficulty": "easy",
-    "question": "?????????????????????",
-    "reference": "????????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_014"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_057",
-    "category": "dataset_design",
-    "difficulty": "medium",
-    "question": "???????????????????",
-    "reference": "?????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_015"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_058",
-    "category": "dataset_design",
-    "difficulty": "medium",
-    "question": "???????????????????",
-    "reference": "?????????????????????????",
-    "reference_context_ids": [
-      "local_ctx_015"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_059",
-    "category": "dataset_design",
+    "case_id": "policy_002_03",
+    "category": "leave",
     "difficulty": "hard",
-    "question": "??????????????? context_id?",
-    "reference": "?????????????????????",
+    "question": "In the leave approval process, what triggers the requirement to file with HR?",
+    "reference": "According to Chapter 3 Article 6, leave longer than three days requires HR filing together with department head approval.",
     "reference_context_ids": [
-      "local_ctx_015"
+      "policy_leave_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Employee Leave and Time Off Policy"
   },
   {
-    "case_id": "local_060",
-    "category": "dataset_design",
+    "case_id": "policy_003_01",
+    "category": "attendance",
+    "difficulty": "easy",
+    "question": "According to the company attendance policy, what are the standard workday attendance hours?",
+    "reference": "According to Article 1, standard workday attendance is from 09:00 to 18:00.",
+    "reference_context_ids": [
+      "policy_attendance_v1"
+    ],
+    "note": "Auto-generated: Attendance and Clock In Management Standard"
+  },
+  {
+    "case_id": "policy_003_02",
+    "category": "attendance",
     "difficulty": "medium",
-    "question": "??????????????????",
-    "reference": "?????????????????????????????",
+    "question": "How many late arrivals or early leaves in a single month require an employee to attend a manager counseling session?",
+    "reference": "According to Article 3, more than three late arrivals or early leaves in one month require a manager counseling session.",
     "reference_context_ids": [
-      "local_ctx_015"
+      "policy_attendance_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Attendance and Clock In Management Standard"
   },
   {
-    "case_id": "local_061",
-    "category": "distractors",
-    "difficulty": "medium",
-    "question": "????????????????",
-    "reference": "??????????????????????",
-    "reference_context_ids": [
-      "local_ctx_016"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_062",
-    "category": "distractors",
-    "difficulty": "medium",
-    "question": "??????????????????????",
-    "reference": "?????????????????",
-    "reference_context_ids": [
-      "local_ctx_016"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_063",
-    "category": "distractors",
+    "case_id": "policy_003_03",
+    "category": "attendance",
     "difficulty": "hard",
-    "question": "?????????????????",
-    "reference": "???????Precision ?????????",
+    "question": "What must field-duty employees do to record attendance when they cannot clock in?",
+    "reference": "According to Article 4, employees on field duty who cannot clock in must submit a field attendance correction request on the same day, with travel evidence attached.",
     "reference_context_ids": [
-      "local_ctx_016"
+      "policy_attendance_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Attendance and Clock In Management Standard"
   },
   {
-    "case_id": "local_064",
-    "category": "distractors",
+    "case_id": "policy_004_01",
+    "category": "travel",
     "difficulty": "easy",
-    "question": "?????????????????????????",
-    "reference": "?????????????",
+    "question": "According to the Domestic Business Travel Policy, what is the default flight class for employees?",
+    "reference": "According to Chapter 2 Article 3, the default flight class is economy class.",
     "reference_context_ids": [
-      "local_ctx_016"
+      "policy_travel_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Domestic Business Travel Policy"
   },
   {
-    "case_id": "local_065",
-    "category": "chunk_boundary",
+    "case_id": "policy_004_02",
+    "category": "travel",
     "difficulty": "medium",
-    "question": "??????????",
-    "reference": "?????????????????? chunk ??????????????",
+    "question": "What is the per-night hotel limit when an employee travels in tier-1 cities, and how is the over-limit portion handled?",
+    "reference": "According to Chapter 2 Article 4, the hotel limit in tier-1 cities is 500 CNY per night. The document does not specify how the over-limit portion is handled.",
     "reference_context_ids": [
-      "local_ctx_017"
+      "policy_travel_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Domestic Business Travel Policy"
   },
   {
-    "case_id": "local_066",
-    "category": "chunk_boundary",
-    "difficulty": "medium",
-    "question": "????????????????????",
-    "reference": "??????????????????????????? chunk?",
-    "reference_context_ids": [
-      "local_ctx_017"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_067",
-    "category": "chunk_boundary",
-    "difficulty": "easy",
-    "question": "chunk_overlap ???????????",
-    "reference": "?????????????????????",
-    "reference_context_ids": [
-      "local_ctx_017"
-    ],
-    "note": "????????????"
-  },
-  {
-    "case_id": "local_068",
-    "category": "chunk_boundary",
+    "case_id": "policy_004_03",
+    "category": "travel",
     "difficulty": "hard",
-    "question": "???????? chunk ????????",
-    "reference": "?????????????????????? chunk?????????",
+    "question": "If an employee finishes a business trip on Friday, by what date must they submit the reimbursement request according to policy?",
+    "reference": "According to Chapter 3 Article 5, travel expenses must be reimbursed within ten business days after trip completion. For a trip ending on Friday, ten business days later is the following Friday, so the reimbursement must be submitted by then.",
     "reference_context_ids": [
-      "local_ctx_017"
+      "policy_travel_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Domestic Business Travel Policy"
   },
   {
-    "case_id": "local_069",
-    "category": "embeddings",
+    "case_id": "policy_005_01",
+    "category": "procurement",
     "difficulty": "easy",
-    "question": "???? embedding ?????????",
-    "reference": "??????????????????????",
+    "question": "According to the Office Procurement and Acceptance Procedure, what is the correct order of the procurement process?",
+    "reference": "According to Article 1, the procurement process must follow the order of request first, purchase second, and acceptance third.",
     "reference_context_ids": [
-      "local_ctx_018"
+      "policy_procurement_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Office Procurement and Acceptance Procedure"
   },
   {
-    "case_id": "local_070",
-    "category": "embeddings",
+    "case_id": "policy_005_02",
+    "category": "procurement",
     "difficulty": "medium",
-    "question": "???? embedding ?????????",
-    "reference": "??????????????????????????? embedding?",
+    "question": "Whose approval is required for a single procurement amount of 5000 CNY?",
+    "reference": "According to Article 3, a single procurement above 3000 CNY requires joint approval from administration and finance.",
     "reference_context_ids": [
-      "local_ctx_018"
+      "policy_procurement_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Office Procurement and Acceptance Procedure"
   },
   {
-    "case_id": "local_071",
-    "category": "embeddings",
-    "difficulty": "medium",
-    "question": "???? embedding ????????",
-    "reference": "???????????????",
+    "case_id": "policy_005_03",
+    "category": "procurement",
+    "difficulty": "hard",
+    "question": "If goods are accepted only on the third business day after delivery, does that comply with company policy? Please explain.",
+    "reference": "It does not comply. According to Article 4, delivered goods must be accepted within two business days, so acceptance on the third business day exceeds the required deadline.",
     "reference_context_ids": [
-      "local_ctx_018"
+      "policy_procurement_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Office Procurement and Acceptance Procedure"
   },
   {
-    "case_id": "local_072",
-    "category": "embeddings",
-    "difficulty": "medium",
-    "question": "?????????? embedding ????????????",
-    "reference": "?????????????????????? embedding ??????",
+    "case_id": "policy_006_01",
+    "category": "contract",
+    "difficulty": "easy",
+    "question": "According to the Contract Approval and Archiving Policy, within how long must an effective contract be electronically archived?",
+    "reference": "According to Chapter 2 Article 3, effective contracts must be electronically archived within three business days.",
     "reference_context_ids": [
-      "local_ctx_018"
+      "policy_contract_v1"
     ],
-    "note": "????????????"
+    "note": "Auto-generated: Contract Approval and Archiving Policy"
+  },
+  {
+    "case_id": "policy_006_02",
+    "category": "contract",
+    "difficulty": "medium",
+    "question": "Which departments must review a business contract in sequence, and who must give the final approval for a contract above 500000 CNY?",
+    "reference": "According to Chapter 1 Article 1, business contracts must be reviewed in sequence by the initiating department, legal, and finance. According to Chapter 1 Article 2, contracts exceeding 500000 CNY require final approval from the general manager.",
+    "reference_context_ids": [
+      "policy_contract_v1"
+    ],
+    "note": "Auto-generated: Contract Approval and Archiving Policy"
+  },
+  {
+    "case_id": "policy_006_03",
+    "category": "contract",
+    "difficulty": "hard",
+    "question": "How are paper contracts managed, and what procedure must an employee follow to borrow an original paper contract?",
+    "reference": "According to Chapter 2 Article 4, original paper contracts are centrally managed by the legal department and cannot be borrowed without approval, so an employee who needs to borrow one must obtain approval from the legal department.",
+    "reference_context_ids": [
+      "policy_contract_v1"
+    ],
+    "note": "Auto-generated: Contract Approval and Archiving Policy"
+  },
+  {
+    "case_id": "policy_007_01",
+    "category": "security",
+    "difficulty": "easy",
+    "question": "According to the Account and Password Security Standard, may employee accounts be shared?",
+    "reference": "No. According to Article 1, employee accounts are personal and must not be shared.",
+    "reference_context_ids": [
+      "policy_security_account_v1"
+    ],
+    "note": "Auto-generated: Account and Password Security Standard"
+  },
+  {
+    "case_id": "policy_007_02",
+    "category": "security",
+    "difficulty": "medium",
+    "question": "What character requirements must passwords meet, and what is the minimum length?",
+    "reference": "According to Article 2, passwords must be at least 12 characters long and must include uppercase letters, lowercase letters, numbers, and special symbols.",
+    "reference_context_ids": [
+      "policy_security_account_v1"
+    ],
+    "note": "Auto-generated: Account and Password Security Standard"
+  },
+  {
+    "case_id": "policy_007_03",
+    "category": "security",
+    "difficulty": "hard",
+    "question": "If a user fails to log in five consecutive times, how long is the account locked, and does this rule apply to all systems or only to critical systems?",
+    "reference": "According to Article 4, the account is automatically locked for 30 minutes after five consecutive failed login attempts. This rule applies to all systems, not only critical systems.",
+    "reference_context_ids": [
+      "policy_security_account_v1"
+    ],
+    "note": "Auto-generated: Account and Password Security Standard"
+  },
+  {
+    "case_id": "policy_008_01",
+    "category": "security",
+    "difficulty": "easy",
+    "question": "According to the Data Classification and Handling Policy, into how many levels is company data classified?",
+    "reference": "Company data is classified into four levels: public, internal, sensitive, and core.",
+    "reference_context_ids": [
+      "policy_data_classification_v1"
+    ],
+    "note": "Auto-generated: Data Classification and Handling Policy"
+  },
+  {
+    "case_id": "policy_008_02",
+    "category": "security",
+    "difficulty": "medium",
+    "question": "What restrictions apply to the transmission of sensitive and core data?",
+    "reference": "Sensitive and core data must not be sent through personal email or consumer messaging tools.",
+    "reference_context_ids": [
+      "policy_data_classification_v1"
+    ],
+    "note": "Auto-generated: Data Classification and Handling Policy"
+  },
+  {
+    "case_id": "policy_008_03",
+    "category": "security",
+    "difficulty": "hard",
+    "question": "What measures are required when exporting data that involves customer privacy, and what conditions must be met to access sensitive data?",
+    "reference": "Data exports involving customer privacy must be desensitized before transmission. Access to sensitive data requires approval from the data owner and recording of access logs.",
+    "reference_context_ids": [
+      "policy_data_classification_v1"
+    ],
+    "note": "Auto-generated: Data Classification and Handling Policy"
+  },
+  {
+    "case_id": "policy_009_01",
+    "category": "security",
+    "difficulty": "easy",
+    "question": "According to the System Access Request and Revocation Policy, what information must a new access request include?",
+    "reference": "According to Article 2, a new access request must describe the business scenario, the access scope, and the expiration date.",
+    "reference_context_ids": [
+      "policy_access_control_v1"
+    ],
+    "note": "Auto-generated: System Access Request and Revocation Policy"
+  },
+  {
+    "case_id": "policy_009_02",
+    "category": "security",
+    "difficulty": "medium",
+    "question": "When an employee leaves the company or changes role, within how long must their system access be revoked?",
+    "reference": "According to Article 3, access must be revoked within one business day.",
+    "reference_context_ids": [
+      "policy_access_control_v1"
+    ],
+    "note": "Auto-generated: System Access Request and Revocation Policy"
+  },
+  {
+    "case_id": "policy_009_03",
+    "category": "security",
+    "difficulty": "hard",
+    "question": "What security requirement applies to high-risk privileged accounts in the system access policy, and how does this requirement relate to the principle of least privilege?",
+    "reference": "According to Article 4, high-risk privileged accounts must enable multi-factor authentication. This is an additional safeguard layered on top of the least privilege principle from Article 1, used to protect the security of accounts that hold sensitive permissions.",
+    "reference_context_ids": [
+      "policy_access_control_v1"
+    ],
+    "note": "Auto-generated: System Access Request and Revocation Policy"
+  },
+  {
+    "case_id": "policy_010_01",
+    "category": "it_ops",
+    "difficulty": "easy",
+    "question": "According to the document, what supporting evidence is required for a production release?",
+    "reference": "According to Article 1, a production release requires a change request with code review and test evidence.",
+    "reference_context_ids": [
+      "policy_release_v1"
+    ],
+    "note": "Auto-generated: Production Release and Change Management Process"
+  },
+  {
+    "case_id": "policy_010_02",
+    "category": "it_ops",
+    "difficulty": "medium",
+    "question": "What are the document's specific requirements on the execution timing and planning of major changes?",
+    "reference": "According to Article 2, major changes should be executed during low-traffic windows and must include rollback plans.",
+    "reference_context_ids": [
+      "policy_release_v1"
+    ],
+    "note": "Auto-generated: Production Release and Change Management Process"
+  },
+  {
+    "case_id": "policy_010_03",
+    "category": "it_ops",
+    "difficulty": "hard",
+    "question": "When a P1 incident occurs, within how long must the change owner join the emergency response channel, and within how long after a release must core service indicators be checked?",
+    "reference": "According to Article 4, in a P1 incident the change owner must join the emergency response channel within 10 minutes. According to Article 3, core service indicators must be checked within 30 minutes after a release.",
+    "reference_context_ids": [
+      "policy_release_v1"
+    ],
+    "note": "Auto-generated: Production Release and Change Management Process"
+  },
+  {
+    "case_id": "policy_011_01",
+    "category": "it_ops",
+    "difficulty": "easy",
+    "question": "According to the Incident Response and Escalation Mechanism, how many incident severity levels are defined, and what are they?",
+    "reference": "Incident severity is divided into 3 levels: P1, P2, and P3.",
+    "reference_context_ids": [
+      "policy_incident_v1"
+    ],
+    "note": "Auto-generated: Incident Response and Escalation Mechanism"
+  },
+  {
+    "case_id": "policy_011_02",
+    "category": "it_ops",
+    "difficulty": "medium",
+    "question": "How do P1 incidents and P2 incidents differ in their initial response requirements?",
+    "reference": "A P1 incident must be confirmed within 5 minutes and emergency procedures must start immediately, whereas a P2 incident requires initial diagnosis within 15 minutes and notification of stakeholders.",
+    "reference_context_ids": [
+      "policy_incident_v1"
+    ],
+    "note": "Auto-generated: Incident Response and Escalation Mechanism"
+  },
+  {
+    "case_id": "policy_011_03",
+    "category": "it_ops",
+    "difficulty": "hard",
+    "question": "According to the policy, within how long after an incident is recovered must the postmortem report containing root cause and corrective actions be completed?",
+    "reference": "According to Article 4, the postmortem report containing root cause and corrective actions must be completed within 24 hours after the incident is recovered.",
+    "reference_context_ids": [
+      "policy_incident_v1"
+    ],
+    "note": "Auto-generated: Incident Response and Escalation Mechanism"
+  },
+  {
+    "case_id": "policy_012_01",
+    "category": "admin",
+    "difficulty": "easy",
+    "question": "According to the Meeting Management and Minutes Standard, how far in advance must the meeting organizer send out the agenda and the attendee list?",
+    "reference": "According to Article 1, the meeting organizer must send the agenda and attendee list at least one day in advance.",
+    "reference_context_ids": [
+      "policy_meeting_v1"
+    ],
+    "note": "Auto-generated: Meeting Management and Minutes Standard"
+  },
+  {
+    "case_id": "policy_012_02",
+    "category": "admin",
+    "difficulty": "medium",
+    "question": "By when must meeting minutes be distributed, and what key information must they include?",
+    "reference": "According to Article 3, meeting minutes must be distributed within 24 hours and must include decisions, owners, and due dates.",
+    "reference_context_ids": [
+      "policy_meeting_v1"
+    ],
+    "note": "Auto-generated: Meeting Management and Minutes Standard"
+  },
+  {
+    "case_id": "policy_012_03",
+    "category": "admin",
+    "difficulty": "hard",
+    "question": "What action must the organizer take for meetings longer than 60 minutes, and what additional duty must weekly meetings fulfil?",
+    "reference": "According to Article 2, meetings longer than 60 minutes must define phase goals and time allocation. According to Article 4, weekly meetings must track the completion status of previous action items.",
+    "reference_context_ids": [
+      "policy_meeting_v1"
+    ],
+    "note": "Auto-generated: Meeting Management and Minutes Standard"
+  },
+  {
+    "case_id": "policy_013_01",
+    "category": "hr",
+    "difficulty": "easy",
+    "question": "According to the policy, what conditions must overtime meet to be recognized?",
+    "reference": "Overtime must be based on business necessity and must be approved in advance.",
+    "reference_context_ids": [
+      "policy_overtime_v1"
+    ],
+    "note": "Auto-generated: Overtime and Comp Time Policy"
+  },
+  {
+    "case_id": "policy_013_02",
+    "category": "hr",
+    "difficulty": "medium",
+    "question": "How does compensation differ between weekday overtime and holiday overtime?",
+    "reference": "Weekday overtime should be compensated with comp time within three months. Holiday overtime may be compensated according to labor regulations either by overtime pay or by comp time.",
+    "reference_context_ids": [
+      "policy_overtime_v1"
+    ],
+    "note": "Auto-generated: Overtime and Comp Time Policy"
+  },
+  {
+    "case_id": "policy_013_03",
+    "category": "hr",
+    "difficulty": "hard",
+    "question": "If an employee works overtime without prior approval, what consequence does that overtime time have?",
+    "reference": "Unapproved overtime is not counted in the official time records, so it earns no compensation or comp time.",
+    "reference_context_ids": [
+      "policy_overtime_v1"
+    ],
+    "note": "Auto-generated: Overtime and Comp Time Policy"
+  },
+  {
+    "case_id": "policy_014_01",
+    "category": "admin",
+    "difficulty": "easy",
+    "question": "According to the policy, in which system must the check-out of equipment such as laptops and monitors be registered?",
+    "reference": "According to Article 1, the check-out of laptops, monitors, and related equipment must be registered in the asset system.",
+    "reference_context_ids": [
+      "policy_asset_v1"
+    ],
+    "note": "Auto-generated: Fixed Asset Check Out and Return Policy"
+  },
+  {
+    "case_id": "policy_014_02",
+    "category": "admin",
+    "difficulty": "medium",
+    "question": "What asset-related procedures must an employee complete before offboarding?",
+    "reference": "According to Article 3, all assets must be returned and verified before the employee leaves the company.",
+    "reference_context_ids": [
+      "policy_asset_v1"
+    ],
+    "note": "Auto-generated: Fixed Asset Check Out and Return Policy"
+  },
+  {
+    "case_id": "policy_014_03",
+    "category": "admin",
+    "difficulty": "hard",
+    "question": "If an asset is found to be lost, within how long must the employee report it, and what support will the company provide?",
+    "reference": "According to Article 4, asset loss must be reported within 24 hours, and the company will provide follow-up investigation support.",
+    "reference_context_ids": [
+      "policy_asset_v1"
+    ],
+    "note": "Auto-generated: Fixed Asset Check Out and Return Policy"
+  },
+  {
+    "case_id": "policy_015_01",
+    "category": "procurement",
+    "difficulty": "easy",
+    "question": "What is the cycle for vendor evaluation?",
+    "reference": "According to Article 3, vendor evaluation is performed every six months.",
+    "reference_context_ids": [
+      "policy_vendor_v1"
+    ],
+    "note": "Auto-generated: Vendor Onboarding and Management Standard"
+  },
+  {
+    "case_id": "policy_015_02",
+    "category": "procurement",
+    "difficulty": "medium",
+    "question": "At what procurement project amount is it required to compare proposals from at least three vendors?",
+    "reference": "According to Article 2, when the project amount exceeds 100000 CNY, proposals from at least three vendors should be compared.",
+    "reference_context_ids": [
+      "policy_vendor_v1"
+    ],
+    "note": "Auto-generated: Vendor Onboarding and Management Standard"
+  },
+  {
+    "case_id": "policy_015_03",
+    "category": "procurement",
+    "difficulty": "hard",
+    "question": "Under what circumstances is a vendor suspended, and what evaluation criteria is this decision based on?",
+    "reference": "According to Article 4, a vendor must be suspended after two consecutive failed evaluations. According to Article 3, the evaluation covers four aspects: quality, delivery, service, and compliance.",
+    "reference_context_ids": [
+      "policy_vendor_v1"
+    ],
+    "note": "Auto-generated: Vendor Onboarding and Management Standard"
+  },
+  {
+    "case_id": "policy_016_01",
+    "category": "admin",
+    "difficulty": "easy",
+    "question": "According to the Business Reception and Gift Management Policy, above what amount does a single reception budget require pre-approval?",
+    "reference": "According to Article 2, a single reception budget above 2000 CNY requires pre-approval.",
+    "reference_context_ids": [
+      "policy_reception_v1"
+    ],
+    "note": "Auto-generated: Business Reception and Gift Management Policy"
+  },
+  {
+    "case_id": "policy_016_02",
+    "category": "admin",
+    "difficulty": "medium",
+    "question": "Within how long after the event must the business reception report and expense details be submitted?",
+    "reference": "According to Article 3, the reception report and expense details must be submitted within five business days after the event.",
+    "reference_context_ids": [
+      "policy_reception_v1"
+    ],
+    "note": "Auto-generated: Business Reception and Gift Management Policy"
+  },
+  {
+    "case_id": "policy_016_03",
+    "category": "admin",
+    "difficulty": "hard",
+    "question": "According to the policy, what information must be recorded when purchasing gifts, and what restriction applies to the use of gifts?",
+    "reference": "According to Article 4, gift purchases must record the purpose, amount, and recipient, and the gifts cannot be retained for personal use.",
+    "reference_context_ids": [
+      "policy_reception_v1"
+    ],
+    "note": "Auto-generated: Business Reception and Gift Management Policy"
+  },
+  {
+    "case_id": "policy_017_01",
+    "category": "finance",
+    "difficulty": "easy",
+    "question": "According to Article 1, what three basic requirements must reimbursement invoices meet?",
+    "reference": "Reimbursement invoices must meet three requirements: authenticity, lawfulness, and completeness.",
+    "reference_context_ids": [
+      "policy_invoice_v1"
+    ],
+    "note": "Auto-generated: Invoice Management and Tax Compliance Standard"
+  },
+  {
+    "case_id": "policy_017_02",
+    "category": "finance",
+    "difficulty": "medium",
+    "question": "Under what circumstances may the finance department refuse to accept an invoice?",
+    "reference": "When the payer name or tax number on the invoice is inconsistent with the company registration information, the finance department may reject the invoice.",
+    "reference_context_ids": [
+      "policy_invoice_v1"
+    ],
+    "note": "Auto-generated: Invoice Management and Tax Compliance Standard"
+  },
+  {
+    "case_id": "policy_017_03",
+    "category": "finance",
+    "difficulty": "hard",
+    "question": "How do submission requirements differ between electronic invoices and VAT special invoices?",
+    "reference": "Electronic invoices require the original files and verification evidence to be submitted. Reimbursement involving VAT special invoices must be submitted within the certification deadlines.",
+    "reference_context_ids": [
+      "policy_invoice_v1"
+    ],
+    "note": "Auto-generated: Invoice Management and Tax Compliance Standard"
+  },
+  {
+    "case_id": "policy_018_01",
+    "category": "hr",
+    "difficulty": "easy",
+    "question": "According to the Training Request and Learning Expense Reimbursement Policy, what obligation must an employee fulfil after completing company-sponsored training?",
+    "reference": "The employee must deliver internal knowledge sharing after completing the training.",
+    "reference_context_ids": [
+      "policy_training_v1"
+    ],
+    "note": "Auto-generated: Training Request and Learning Expense Reimbursement Policy"
+  },
+  {
+    "case_id": "policy_018_02",
+    "category": "hr",
+    "difficulty": "medium",
+    "question": "Which documents or materials must an employee submit when applying for training expense reimbursement?",
+    "reference": "The employee must submit the course notice, the payment receipt, and the learning summary.",
+    "reference_context_ids": [
+      "policy_training_v1"
+    ],
+    "note": "Auto-generated: Training Request and Learning Expense Reimbursement Policy"
+  },
+  {
+    "case_id": "policy_018_03",
+    "category": "hr",
+    "difficulty": "hard",
+    "question": "According to the policy, what is the approval flow when a single training cost exceeds 8000 CNY, and how does it differ from general external training approval?",
+    "reference": "A single training cost above 8000 CNY requires division head approval, whereas general external training only requires advance approval with the expected business value stated.",
+    "reference_context_ids": [
+      "policy_training_v1"
+    ],
+    "note": "Auto-generated: Training Request and Learning Expense Reimbursement Policy"
+  },
+  {
+    "case_id": "policy_019_01",
+    "category": "hr",
+    "difficulty": "easy",
+    "question": "According to the Remote Work Management Guideline, what steps must an employee complete before working remotely?",
+    "reference": "The employee must obtain approval from the direct manager and register in the system.",
+    "reference_context_ids": [
+      "policy_remote_work_v1"
+    ],
+    "note": "Auto-generated: Remote Work Management Guideline"
+  },
+  {
+    "case_id": "policy_019_02",
+    "category": "hr",
+    "difficulty": "medium",
+    "question": "What working requirements must an employee meet during remote work?",
+    "reference": "The employee must remain reachable and must attend all required meetings.",
+    "reference_context_ids": [
+      "policy_remote_work_v1"
+    ],
+    "note": "Auto-generated: Remote Work Management Guideline"
+  },
+  {
+    "case_id": "policy_019_03",
+    "category": "hr",
+    "difficulty": "hard",
+    "question": "According to the guideline, under what circumstances must an employee perform periodic progress reporting, and which remote work cases does this requirement apply to?",
+    "reference": "When an employee works remotely for more than five consecutive business days, periodic progress reporting is required.",
+    "reference_context_ids": [
+      "policy_remote_work_v1"
+    ],
+    "note": "Auto-generated: Remote Work Management Guideline"
+  },
+  {
+    "case_id": "policy_020_01",
+    "category": "admin",
+    "difficulty": "easy",
+    "question": "According to the document, what basic information must a policy document include?",
+    "reference": "According to Article 1, a policy document must include the version number, the effective date, and the publishing department.",
+    "reference_context_ids": [
+      "policy_archive_v1"
+    ],
+    "note": "Auto-generated: Document Archiving and Version Management Standard"
+  },
+  {
+    "case_id": "policy_020_02",
+    "category": "admin",
+    "difficulty": "medium",
+    "question": "What content must the revision notes record for a revised document?",
+    "reference": "According to Article 2, the revision notes must include additions, modifications, and deprecated clauses.",
+    "reference_context_ids": [
+      "policy_archive_v1"
+    ],
+    "note": "Auto-generated: Document Archiving and Version Management Standard"
+  },
+  {
+    "case_id": "policy_020_03",
+    "category": "admin",
+    "difficulty": "hard",
+    "question": "How should the archive directory be organized to ensure traceability and discoverability of documents, and what is the purpose of doing so?",
+    "reference": "According to Article 4, the archive directory should be organized by department and topic in order to ensure traceability and discoverability.",
+    "reference_context_ids": [
+      "policy_archive_v1"
+    ],
+    "note": "Auto-generated: Document Archiving and Version Management Standard"
+  },
+  {
+    "case_id": "policy_021_01",
+    "category": "hr",
+    "difficulty": "easy",
+    "question": "According to this policy, what is the source of truth for the employee directory?",
+    "reference": "According to Chapter 1 Article 1, the structured employee directory in the rag_employees PostgreSQL table is the single source of truth for employee identity, department, job title, employee_id, and corporate email.",
+    "reference_context_ids": [
+      "policy_employee_directory_v1"
+    ],
+    "note": "Auto-generated: Employee Directory Source-of-Truth Policy"
+  },
+  {
+    "case_id": "policy_021_02",
+    "category": "hr",
+    "difficulty": "medium",
+    "question": "When a free-text policy document conflicts with the structured employee directory, which one should be followed?",
+    "reference": "According to Chapter 1 Article 2, when a conflict occurs, the structured record wins.",
+    "reference_context_ids": [
+      "policy_employee_directory_v1"
+    ],
+    "note": "Auto-generated: Employee Directory Source-of-Truth Policy"
+  },
+  {
+    "case_id": "policy_021_03",
+    "category": "hr",
+    "difficulty": "hard",
+    "question": "If an employee directory lookup returns zero matching records, how should the assistant behave? Please name two things it must not do.",
+    "reference": "According to Chapter 3 Articles 5 and 6, the assistant must clearly tell the user that no matching employee was found, must not invent an employee's name, department, title, or email, and must not guess an employee's manager, location, or contact details from policy text alone.",
+    "reference_context_ids": [
+      "policy_employee_directory_v1"
+    ],
+    "note": "Auto-generated: Employee Directory Source-of-Truth Policy"
+  },
+  {
+    "case_id": "policy_022_01",
+    "category": "hr",
+    "difficulty": "easy",
+    "question": "According to the policy, when matching records are found in the employee directory, which information fields should the assistant return?",
+    "reference": "According to Chapter 2 Article 3, the assistant should return five fields in this order: name, employee_id, department, title, and email.",
+    "reference_context_ids": [
+      "policy_employee_qa_v1"
+    ],
+    "note": "Auto-generated: Employee Question Answering Standard"
+  },
+  {
+    "case_id": "policy_022_02",
+    "category": "hr",
+    "difficulty": "medium",
+    "question": "If a user asks who works in a department or who holds a specific job title, how should the assistant handle the returned results?",
+    "reference": "According to Chapter 1 Article 2, the assistant must enumerate the exact directory matches and explicitly state the count.",
+    "reference_context_ids": [
+      "policy_employee_qa_v1"
+    ],
+    "note": "Auto-generated: Employee Question Answering Standard"
+  },
+  {
+    "case_id": "policy_022_03",
+    "category": "hr",
+    "difficulty": "hard",
+    "question": "Under what circumstances must the assistant perform an explicit confirmation step, and what types of employee information is the assistant forbidden to disclose?",
+    "reference": "According to Chapter 3 Article 7, an explicit user confirmation step is required when more than ten employees are listed in a single response. According to Chapter 3 Article 6, the assistant must not disclose home address, salary, performance rating, or any field outside the directory schema.",
+    "reference_context_ids": [
+      "policy_employee_qa_v1"
+    ],
+    "note": "Auto-generated: Employee Question Answering Standard"
+  },
+  {
+    "case_id": "policy_023_01",
+    "category": "hr",
+    "difficulty": "easy",
+    "question": "According to the company policy, which job titles does the Engineering department include?",
+    "reference": "According to Chapter 2 Article 3, Engineering job titles include Backend Engineer, Frontend Engineer, Senior Backend Engineer, Engineering Manager, and Site Reliability Engineer.",
+    "reference_context_ids": [
+      "policy_org_structure_v1"
+    ],
+    "note": "Auto-generated: Departments and Job Title Taxonomy"
+  },
+  {
+    "case_id": "policy_023_02",
+    "category": "hr",
+    "difficulty": "medium",
+    "question": "If a user enters 'HR' as input, how should the system handle this input?",
+    "reference": "According to Chapter 1 Article 2, 'HR' is a common abbreviation for 'Human Resources' and is accepted as input, but it must be normalized to the full form 'Human Resources' when the system answers.",
+    "reference_context_ids": [
+      "policy_org_structure_v1"
+    ],
+    "note": "Auto-generated: Departments and Job Title Taxonomy"
+  },
+  {
+    "case_id": "policy_023_03",
+    "category": "hr",
+    "difficulty": "hard",
+    "question": "When a user mentions a synonym or abbreviation for a department or job title, what rule must the system follow when performing the lookup?",
+    "reference": "According to Chapter 3 Article 7, the system must attempt the structured lookup with both the synonym and the canonical form, and may only declare no match when neither form returns a result.",
+    "reference_context_ids": [
+      "policy_org_structure_v1"
+    ],
+    "note": "Auto-generated: Departments and Job Title Taxonomy"
   }
 ]

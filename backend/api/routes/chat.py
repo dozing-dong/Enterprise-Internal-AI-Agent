@@ -1,8 +1,8 @@
-"""聊天相关路由。
+"""Chat-related routes.
 
-包含两个入口：
-- ``POST /chat``           兼容性入口，内部消费一次 ``stream`` 后聚合返回。
-- ``POST /chat/stream``    SSE 流式接口，仅下发 token / sources / done / error。
+Two entry points:
+- ``POST /chat``           Compatibility entry; consumes a single ``stream`` internally and aggregates the result.
+- ``POST /chat/stream``    SSE streaming endpoint; only emits token / sources / done / error events.
 """
 
 from __future__ import annotations
@@ -32,19 +32,19 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{8,64}$")
 
 
 def _format_sse(event: str, data: dict[str, Any]) -> str:
-    """按 SSE 协议拼装单条事件。"""
+    """Assemble a single SSE event according to the protocol."""
     payload = json.dumps(data, ensure_ascii=False)
     return f"event: {event}\ndata: {payload}\n\n"
 
 
 def _ensure_graph(runtime: DemoRuntime, mode: str) -> None:
     if mode == "agent" and runtime.agent_graph is None:
-        raise RagException("Agent graph 未初始化。", status_code=503)
+        raise RagException("Agent graph is not initialized.", status_code=503)
     if mode == "rag" and runtime.rag_graph is None:
-        raise RagException("RAG graph 未初始化。", status_code=503)
+        raise RagException("RAG graph is not initialized.", status_code=503)
     if mode == "multi_agent" and runtime.multi_agent_graph is None:
         raise RagException(
-            "Multi-Agent graph 未初始化（可能 langchain-mcp-adapters 未安装或 MCP server 启动失败）。",
+            "Multi-Agent graph is not initialized (langchain-mcp-adapters may be missing or an MCP server failed to start).",
             status_code=503,
         )
 
@@ -54,9 +54,9 @@ async def chat(
     request: ChatRequest,
     runtime: Annotated[DemoRuntime, Depends(get_runtime)],
 ) -> ChatResponse:
-    """非流式入口：内部消费同一条 stream 后聚合返回。
+    """Non-streaming entry: consumes the same stream internally and returns an aggregated response.
 
-    主流业务请使用 ``POST /chat/stream``。
+    For mainstream usage, prefer ``POST /chat/stream``.
     """
     _ensure_graph(runtime, request.mode)
     orchestrator = ChatOrchestrator(runtime)
@@ -68,10 +68,10 @@ async def chat_stream(
     request: ChatStreamRequest,
     runtime: Annotated[DemoRuntime, Depends(get_runtime)],
 ) -> StreamingResponse:
-    """SSE 流式聊天接口。
+    """SSE streaming chat endpoint.
 
-    事件类型：``token`` / ``sources`` / ``done`` / ``error``。
-    出错时统一通过 ``error`` 事件回传。
+    Event types: ``token`` / ``sources`` / ``done`` / ``error``.
+    On error, an ``error`` event is emitted uniformly.
     """
     if not _SESSION_ID_RE.match(request.session_id):
         raise RagException(

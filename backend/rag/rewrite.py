@@ -24,7 +24,7 @@ def _build_user_text(question: str) -> str:
 
 
 def build_query_rewrite_chain() -> Callable[[str], str]:
-    """构建一个最小查询改写函数。"""
+    """Build a minimal query rewriting function."""
 
     chat_model = get_chat_model(temperature=0.0)
 
@@ -42,36 +42,39 @@ def build_query_rewrite_chain() -> Callable[[str], str]:
                 for block in content
             ]
             content = "".join(text_parts)
-        return str(content or "").strip() or "没有生成可用回答。"
+        return str(content or "").strip() or "Failed to generate a usable answer."
 
     return rewrite_question
 
 
 def normalize_rewritten_question(rewritten_question: str, original_question: str) -> str:
-    """清理模型输出，尽量只保留检索问题本身。"""
+    """Clean up the model's output, keeping only the retrieval query itself when possible."""
     cleaned_question = rewritten_question.strip()
 
-    # 有些模型会带上“改写后问题：”或 "Rewritten question:" 这类前缀。
-    # 这里用最简单、可读的方式去掉常见标签，英文与中文前缀同时兼容。
+    # Some models prepend labels like "Rewritten question:" or "Rewritten query:".
+    # Strip the most common prefixes the simple, readable way; keep both
+    # English and Chinese prefixes for compatibility with bilingual outputs.
     prefixes = [
         "Rewritten question:",
         "Rewritten query:",
         "Retrieval query:",
         "Query:",
         "Question:",
-        "改写后问题：",
-        "改写后的问题：",
-        "检索问题：",
-        "改写问题：",
-        "问题：",
+        # Chinese counterparts kept as Unicode escapes so the source stays ASCII.
+        "\u6539\u5199\u540e\u95ee\u9898\uff1a",
+        "\u6539\u5199\u540e\u7684\u95ee\u9898\uff1a",
+        "\u68c0\u7d22\u95ee\u9898\uff1a",
+        "\u6539\u5199\u95ee\u9898\uff1a",
+        "\u95ee\u9898\uff1a",
     ]
 
     for prefix in prefixes:
         if cleaned_question.lower().startswith(prefix.lower()):
             cleaned_question = cleaned_question[len(prefix):].strip()
 
-    # 如果模型没有认真按要求输出，导致清理后变成空字符串，
-    # 就直接退回原问题，避免后面的检索链断掉。
+    # If the model did not follow the instructions and the cleaned text is
+    # empty, fall back to the original question to keep the retrieval chain
+    # from breaking.
     if not cleaned_question:
         return original_question
 
@@ -79,7 +82,7 @@ def normalize_rewritten_question(rewritten_question: str, original_question: str
 
 
 def _expand_retrieval_hints(query: str) -> str:
-    """给跨语言场景补充检索提示词，提升命中英文 policy 文档的概率。"""
+    """Add retrieval hints for cross-language scenarios so English policy docs are easier to hit."""
     text = (query or "").strip()
     if not text:
         return text
@@ -90,18 +93,20 @@ def _expand_retrieval_hints(query: str) -> str:
         if value not in hints:
             hints.append(value)
 
-    # 中文问法 -> 英文 policy 关键词，主要覆盖“员工出差/报销”场景。
-    if any(token in text for token in ("出差", "差旅", "外地")):
+    # Chinese phrasings -> English policy keywords; mainly covers the
+    # "employee business travel / reimbursement" scenarios. Tokens are
+    # written as Unicode escapes to keep the source ASCII.
+    if any(token in text for token in ("\u51fa\u5dee", "\u5dee\u65c5", "\u5916\u5730")):
         add_hint("business travel policy")
         add_hint("travel request")
         add_hint("hotel limit")
-    if any(token in text for token in ("报销", "费用", "发票", "reimbursement")):
+    if any(token in text for token in ("\u62a5\u9500", "\u8d39\u7528", "\u53d1\u7968", "reimbursement")):
         add_hint("expense reimbursement policy")
         add_hint("reimbursable scope")
         add_hint("approval rules")
-    if any(token in text for token in ("流程", "审批")):
+    if any(token in text for token in ("\u6d41\u7a0b", "\u5ba1\u6279")):
         add_hint("approval workflow")
-    if "policy" in text.lower() or "政策" in text:
+    if "policy" in text.lower() or "\u653f\u7b56" in text:
         add_hint("company policy")
 
     if not hints:
@@ -113,8 +118,8 @@ def rewrite_question_for_retrieval(
     question: str,
     rewrite_chain: Callable[[str], str] | None,
 ) -> str:
-    """把原问题改写成更适合检索的问题。"""
-    # 如果当前没有启用查询改写，就直接返回原问题。
+    """Rewrite the original question into a more retrieval-friendly form."""
+    # If query rewriting is not enabled, just return the original question.
     if rewrite_chain is None:
         return _expand_retrieval_hints(question)
 

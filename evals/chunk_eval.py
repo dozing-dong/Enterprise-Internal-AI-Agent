@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
-# 这里单独把项目根目录加入 sys.path。
-# 原因和其他评测脚本一样：这个脚本通常会被直接运行。
+# Add the project root to sys.path explicitly here. Same reason as the other
+# eval scripts: this script is typically executed directly.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -29,8 +29,8 @@ from evals.ragas_retrieval_eval import (
 )
 
 
-# 任务 4 的重点仍然是“只比较 chunk 策略”。
-# 所以这里固定使用同一种检索节点，只让 chunk 配置变化。
+# The focus of task 4 is still "only compare chunk strategies", so we keep a
+# single retrieve node fixed and only vary the chunk configuration.
 TARGET_RETRIEVE_NODE_NAME = "fuse_retrieve"
 
 
@@ -38,9 +38,9 @@ def build_retrieve_docs_node_for_profile(
     split_documents_list,
     profile_name: str,
 ) -> Callable[[str], list[RagDocument]]:
-    """根据 chunk 策略构建本次评测要使用的 retrieve_docs 节点函数。"""
-    # 每个 profile 都使用独立的 collection_name。
-    # 这样可以避免多个实验之间互相污染临时向量库。
+    """Build the retrieve_docs node function used for this chunk profile run."""
+    # Each profile uses its own collection_name to prevent cross-contamination
+    # between experiments in the temporary vector store.
     collection_name = f"chunk_eval_{profile_name}_{uuid4().hex}"
 
     vectorstore = build_evaluation_vectorstore(
@@ -61,19 +61,19 @@ def build_retrieve_docs_node_for_profile(
         return hybrid_retriever.invoke
 
     raise ValueError(
-        f"未知的检索节点名称: {TARGET_RETRIEVE_NODE_NAME}。"
-        "可选值有: vector_retrieve、keyword_retrieve、fuse_retrieve"
+        f"Unknown retrieve node name: {TARGET_RETRIEVE_NODE_NAME}. "
+        "Allowed values: vector_retrieve, keyword_retrieve, fuse_retrieve"
     )
 
 
 def print_chunk_profile_overview() -> None:
-    """打印当前要比较的 chunk 策略。"""
+    """Print the chunk strategies that are being compared."""
     print("=" * 80)
-    print("Chunk 策略对比说明")
+    print("Chunk strategy comparison overview")
     print("=" * 80)
-    print(f"当前固定检索节点: {TARGET_RETRIEVE_NODE_NAME}")
-    print(f"默认在线策略: {DEFAULT_CHUNK_PROFILE_NAME}")
-    print("本次对比的 chunk 配置:")
+    print(f"Fixed retrieve node: {TARGET_RETRIEVE_NODE_NAME}")
+    print(f"Default online profile: {DEFAULT_CHUNK_PROFILE_NAME}")
+    print("Chunk configurations under comparison:")
 
     for profile_name, profile in CHUNK_PROFILES.items():
         print(f"- {profile_name}")
@@ -87,18 +87,18 @@ def print_profile_results(
     split_document_count: int,
     case_results: list[dict],
 ) -> None:
-    """打印某一种 chunk 策略的 RAGAS 结果。"""
+    """Print RAGAS results for a single chunk strategy."""
     summary = summarize_ragas_results(case_results)
     category_summary = summarize_ragas_results_by_category(case_results)
 
     print("\n" + "=" * 80)
-    print(f"Chunk 策略: {profile_name}")
+    print(f"Chunk strategy: {profile_name}")
     print("=" * 80)
-    print(f"切分后片段数: {split_document_count}")
-    print(f"题目总数: {summary['total_cases']}")
+    print(f"Number of chunks after split: {split_document_count}")
+    print(f"Total cases: {summary['total_cases']}")
     print(f"RAGAS Context Precision: {summary['ragas_context_precision']:.4f}")
     print(f"RAGAS Context Recall: {summary['ragas_context_recall']:.4f}")
-    print("分类结果:")
+    print("Per-category results:")
 
     for category, category_result in category_summary.items():
         print(
@@ -110,14 +110,14 @@ def print_profile_results(
 
 
 def print_final_profile_comparison(all_profile_results: dict[str, dict]) -> None:
-    """打印所有 chunk 策略的最终对比结果。"""
+    """Print the final cross-strategy comparison for all chunk profiles."""
     print("\n" + "=" * 80)
-    print("Chunk 策略最终对比")
+    print("Chunk strategy final comparison")
     print("=" * 80)
 
     for profile_name, result in all_profile_results.items():
-        print(f"策略: {profile_name}")
-        print(f"  切分后片段数: {result['split_document_count']}")
+        print(f"profile: {profile_name}")
+        print(f"  number of chunks after split: {result['split_document_count']}")
         print(
             "  "
             f"RAGAS Context Precision: "
@@ -132,18 +132,18 @@ def print_final_profile_comparison(all_profile_results: dict[str, dict]) -> None
 
 
 async def main() -> None:
-    """执行 chunk 策略对比评测。"""
-    # 第一步：说明评测集构成。
+    """Run the chunk strategy comparison evaluation."""
+    # Step 1: describe the eval dataset.
     print_eval_dataset_overview()
     print()
 
-    # 第二步：说明本次 chunk 对比规则。
+    # Step 2: describe the chunk comparison rules.
     print_chunk_profile_overview()
 
-    # 第三步：准备原始文档。
+    # Step 3: load the source documents.
     documents = build_documents()
 
-    # 第四步：在同一批文档上分别套用不同 chunk 策略。
+    # Step 4: apply each chunk strategy to the same set of documents.
     all_profile_results: dict[str, dict] = {}
 
     for profile_name in CHUNK_PROFILES:
@@ -171,7 +171,7 @@ async def main() -> None:
             case_results,
         )
 
-    # 第五步：打印最终对比结果。
+    # Step 5: print the final cross-strategy comparison.
     print_final_profile_comparison(all_profile_results)
 
 

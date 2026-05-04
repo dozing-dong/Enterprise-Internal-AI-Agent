@@ -1,7 +1,8 @@
-"""会话标题生成。
+"""Session title generation.
 
-通过 LLM 从首轮 user/assistant 内容生成一个 3-6 个英文单词的简短标题。
-失败时回退到截断后的原始问题，保证总能拿到一个可读的 title。
+Use the LLM to generate a 3-6 word English title from the first
+user/assistant exchange. On failure, falls back to a truncated version
+of the original question, ensuring there is always a readable title.
 """
 
 from __future__ import annotations
@@ -24,15 +25,15 @@ FALLBACK_LENGTH = 40
 
 
 def _clean_title(raw: str) -> str:
-    """剥掉常见装饰字符，保证 title 干净可显示。"""
+    """Strip common decorative characters to keep the title clean and presentable."""
     cleaned = raw.strip()
 
     if cleaned.lower().startswith("title:"):
-        cleaned = cleaned[len("title:") :].strip()
+        cleaned = cleaned[len("title:"):].strip()
 
-    cleaned = cleaned.strip("\"'`“”‘’ ")
+    cleaned = cleaned.strip("\"'`\u201c\u201d\u2018\u2019 ")
     cleaned = cleaned.splitlines()[0].strip() if cleaned else cleaned
-    cleaned = cleaned.rstrip(".。！!？?")
+    cleaned = cleaned.rstrip(".\u3002\uff01!\uff1f?")
 
     if len(cleaned) > MAX_TITLE_LENGTH:
         cleaned = cleaned[:MAX_TITLE_LENGTH].rstrip()
@@ -43,7 +44,7 @@ def _clean_title(raw: str) -> str:
 def _fallback_title(question: str) -> str:
     snippet = question.strip().splitlines()[0] if question.strip() else "New Chat"
     if len(snippet) > FALLBACK_LENGTH:
-        snippet = snippet[:FALLBACK_LENGTH].rstrip() + "…"
+        snippet = snippet[:FALLBACK_LENGTH].rstrip() + "\u2026"
     return snippet or "New Chat"
 
 
@@ -58,16 +59,16 @@ def _coerce_to_text(content) -> str:
 
 
 def generate_session_title(question: str, answer: str) -> str:
-    """根据首轮对话生成一个简短标题。
+    """Generate a short title from the first conversation exchange.
 
-    出错时回退到原问题截断版本。
+    Falls back to a truncated original question on error.
     """
     user_excerpt = question.strip()
     assistant_excerpt = answer.strip()
     if len(user_excerpt) > 400:
-        user_excerpt = user_excerpt[:400].rstrip() + "…"
+        user_excerpt = user_excerpt[:400].rstrip() + "\u2026"
     if len(assistant_excerpt) > 400:
-        assistant_excerpt = assistant_excerpt[:400].rstrip() + "…"
+        assistant_excerpt = assistant_excerpt[:400].rstrip() + "\u2026"
 
     user_message = HumanMessage(
         "Conversation to summarize:\n\n"

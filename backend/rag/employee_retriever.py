@@ -1,14 +1,18 @@
-"""员工结构化信息检索（PostgreSQL）。
+"""Structured employee information retrieval (PostgreSQL).
 
-设计要点：
-- 与 ``backend.rag.retrievers`` / ``backend.storage.history`` 共用同一个
-  PG 连接配置，避免引入额外服务依赖。
-- 启动期通过 ``CREATE TABLE IF NOT EXISTS`` 自动建表，对部署友好。
-- 查询行为为模糊匹配（``ILIKE``）：把同一个 ``query`` 同时尝试匹配
-  ``name`` / ``department`` / ``title`` / ``employee_id`` / ``email``，
-  并允许调用方再叠加 ``department`` / ``title`` 作为精确过滤。
-- 失败容忍：DB 不可用、表为空、SQL 异常都返回空列表，不向上抛，
-  以满足“RAG 必查但查不到可忽略”的语义。
+Design notes:
+- Shares the same PG connection configuration as
+  ``backend.rag.retrievers`` and ``backend.storage.history`` to avoid
+  introducing another service dependency.
+- Auto-creates the table at startup via ``CREATE TABLE IF NOT EXISTS``,
+  which is deployment-friendly.
+- Lookup behaviour is fuzzy match (``ILIKE``): the same ``query`` is
+  attempted against ``name`` / ``department`` / ``title`` /
+  ``employee_id`` / ``email`` simultaneously, and callers may
+  additionally apply ``department`` / ``title`` as exact filters.
+- Failure tolerant: DB unavailable, empty table, or SQL exceptions
+  return an empty list instead of raising, fitting the
+  "RAG must query but a miss is fine" semantic.
 """
 
 from __future__ import annotations
@@ -54,23 +58,24 @@ _LOOKUP_STOPWORDS = {
 
 
 def _extract_name_hint(query: str) -> str | None:
-    """从自然语言里提取可能的人名（英文字母为主）。"""
+    """Extract a likely person name from natural-language input (mostly Latin letters)."""
     patterns = [
-        r"(?:我叫|我是)\s*([A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){0,2})",
+        # Chinese-leading hints "\u6211\u53eb" / "\u6211\u662f"
+        r"(?:\u6211\u53eb|\u6211\u662f)\s*([A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){0,2})",
         r"(?:my\s+name\s+is|i\s+am)\s*([A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){0,2})",
     ]
     for pattern in patterns:
         match = re.search(pattern, query, flags=re.IGNORECASE)
         if not match:
             continue
-        value = re.sub(r"\s+", " ", match.group(1)).strip(" ,.!?\"'“”")
+        value = re.sub(r"\s+", " ", match.group(1)).strip(" ,.!?\"'\u201c\u201d")
         if value:
             return value
     return None
 
 
 def _build_query_patterns(query: str) -> list[str]:
-    """把整句查询拆成更可命中的 pattern 列表。"""
+    """Split a full-sentence query into patterns more likely to hit."""
     clean_query = query.strip()
     if not clean_query:
         return []
@@ -88,15 +93,16 @@ def _build_query_patterns(query: str) -> list[str]:
         seen.add(lowered)
         patterns.append(candidate)
 
-    # 1) 优先尝试显式姓名提示，如“我叫 Alice Carter”
+    # 1) First, try an explicit name hint such as "my name is Alice Carter".
     name_hint = _extract_name_hint(clean_query)
     if name_hint:
         _push(name_hint)
 
-    # 2) 再尝试完整 query
+    # 2) Then try the full query.
     _push(clean_query)
 
-    # 3) 最后拆分英文 token，降低整句匹配失败概率
+    # 3) Finally, split into Latin tokens to lower the chance of a
+    #    full-sentence miss.
     for token in re.findall(r"[A-Za-z][A-Za-z'.-]{1,}", clean_query):
         lowered = token.lower()
         if lowered in _LOOKUP_STOPWORDS:
@@ -110,7 +116,7 @@ def _build_query_patterns(query: str) -> list[str]:
 
 @dataclass(slots=True)
 class EmployeeRecord:
-    """单条员工记录。字段顺序固定，便于上游序列化。"""
+    """A single employee record. Field order is fixed for upstream serialization."""
 
     employee_id: str
     name: str
@@ -128,7 +134,7 @@ class EmployeeRecord:
         }
 
     def to_text(self) -> str:
-        """转成自然语言段落，便于塞进 RAG 上下文。"""
+        """Convert to a natural-language paragraph suitable for the RAG context."""
         return (
             f"Employee {self.employee_id}: {self.name}, "
             f"department={self.department}, title={self.title}, "
@@ -137,11 +143,12 @@ class EmployeeRecord:
 
 
 class EmployeeStore:
-    """基于 PG 的员工目录读写客户端。
+    """Read/write client for the employee directory backed by PG.
 
-    业务上只读（生产数据维护通过 SQL 或运营脚本完成），
-    本类只暴露 ``ensure_table`` / ``upsert_many`` / ``search``，
-    便于初始化时灌入演示数据。
+    Operationally read-only (production data is maintained via SQL or
+    operational scripts); this class only exposes ``ensure_table`` /
+    ``upsert_many`` / ``search`` for convenient seeding of demo data
+    during initialization.
     """
 
     def __init__(
@@ -160,7 +167,7 @@ class EmployeeStore:
             import psycopg
         except ImportError as exc:
             raise ImportError(
-                "缺少 psycopg 依赖，无法使用 EmployeeStore。"
+                "psycopg is required to use EmployeeStore."
             ) from exc
         return psycopg.connect(_normalize_pg_connection_string(self._connection_string))
 
@@ -204,12 +211,12 @@ class EmployeeStore:
             self._table_initialized = True
 
     def ensure_table(self) -> None:
-        """显式建表（不要求一定成功，调用方可吞异常）。"""
+        """Explicit table creation (not required to succeed; the caller may swallow exceptions)."""
         with self._connect() as connection:
             self._ensure_table(connection)
 
     def upsert_many(self, records: list[EmployeeRecord]) -> int:
-        """批量写入员工数据，存在则覆盖（按 employee_id 主键）。"""
+        """Bulk insert employee data; existing rows are overwritten by the employee_id primary key."""
         if not records:
             return 0
 
@@ -263,12 +270,13 @@ class EmployeeStore:
         title: str | None = None,
         limit: int = EMPLOYEE_LOOKUP_TOP_K,
     ) -> list[EmployeeRecord]:
-        """模糊匹配员工。
+        """Fuzzy match employees.
 
-        - ``query``：在 ``name`` / ``department`` / ``title`` /
-          ``employee_id`` / ``email`` 上做 ``ILIKE``，任一命中即返回。
-        - ``department`` / ``title``：可选的精确过滤（``ILIKE``）。
-        - DB 不可用或异常时返回空列表，调用方应视为“没有员工证据”。
+        - ``query``: ``ILIKE`` against ``name`` / ``department`` /
+          ``title`` / ``employee_id`` / ``email``; any single hit returns the row.
+        - ``department`` / ``title``: optional exact-ish filters (``ILIKE``).
+        - When the DB is unavailable or an exception occurs, an empty
+          list is returned and the caller should treat it as "no employee evidence".
         """
         clean_query = (query or "").strip()
         clean_department = (department or "").strip()
@@ -340,10 +348,12 @@ def employee_records_to_documents(
     *,
     query: str | None = None,
 ) -> list[RagDocument]:
-    """把员工记录包装成 RagDocument，便于合入 RAG ``retrieved_docs``。
+    """Wrap employee records into RagDocument objects so they can be merged into RAG ``retrieved_docs``.
 
-    每条员工对应一个独立 doc，``document_role=employee_structured``
-    便于下游识别这是结构化数据来源（而非自由文本知识库片段）。
+    Each employee corresponds to its own doc with
+    ``document_role=employee_structured`` so downstream callers can
+    recognize that it comes from a structured data source (rather than a
+    free-text knowledge-base chunk).
     """
     docs: list[RagDocument] = []
     for record in records:
@@ -373,9 +383,10 @@ def safe_search_employees(
     title: str | None = None,
     limit: int = EMPLOYEE_LOOKUP_TOP_K,
 ) -> list[EmployeeRecord]:
-    """辅助函数：``store`` 为空或抛错都视为查不到。
+    """Helper: a None ``store`` or an exception is treated as a miss.
 
-    供 RAG chain 的“必查”节点使用，避免把基础设施故障传染到主流程。
+    Used by the RAG chain's "must-query" node to avoid letting
+    infrastructure failures contaminate the main pipeline.
     """
     if store is None:
         return []
@@ -449,7 +460,7 @@ DEFAULT_DEMO_EMPLOYEES: list[EmployeeRecord] = [
 
 
 def seed_default_employees(store: EmployeeStore | None = None) -> int:
-    """把内置 demo 员工写入表。失败时返回 0，不向上抛。"""
+    """Insert the built-in demo employees into the table. Returns 0 on failure without raising."""
     target = store or EmployeeStore()
     try:
         return target.upsert_many(DEFAULT_DEMO_EMPLOYEES)

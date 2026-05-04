@@ -7,36 +7,36 @@ from backend.config import (
     DEFAULT_CHUNK_PROFILE_NAME,
 )
 
-#获取切分策略
+
 def get_chunk_profile(profile_name: str | None = None) -> dict:
-    """读取指定的 chunk 策略配置。"""
-    # 如果调用方没有显式传入策略名，就使用项目默认策略。
+    """Read the specified chunk profile configuration."""
+    # Use the project default profile when the caller doesn't pass one.
     selected_profile_name = profile_name or DEFAULT_CHUNK_PROFILE_NAME
 
     if selected_profile_name not in CHUNK_PROFILES:
         raise ValueError(
-            f"未知的 chunk 策略: {selected_profile_name}。"
-            f"可选值有: {list(CHUNK_PROFILES.keys())}"
+            f"Unknown chunk profile: {selected_profile_name}. "
+            f"Available options: {list(CHUNK_PROFILES.keys())}"
         )
 
     return CHUNK_PROFILES[selected_profile_name]
 
-#执行按窗口切分文本
+
 def split_text_by_window(
     text: str,
     *,
     chunk_size: int,
     chunk_overlap: int,
 ) -> list[str]:
-    """按窗口切分文本。"""
+    """Split text into overlapping windows."""
     if not text:
         return []
 
     if chunk_size <= 0:
-        raise ValueError("chunk_size 必须大于 0。")
+        raise ValueError("chunk_size must be greater than 0.")
 
     if chunk_overlap < 0 or chunk_overlap >= chunk_size:
-        raise ValueError("chunk_overlap 必须 >= 0 且小于 chunk_size。")
+        raise ValueError("chunk_overlap must be >= 0 and less than chunk_size.")
 
     chunks: list[str] = []
     start = 0
@@ -52,12 +52,12 @@ def split_text_by_window(
 
 
 STRUCTURE_HEADING_PATTERNS = [
-    # 例如：第八章、第12条
-    re.compile(r"^第[一二三四五六七八九十百千万0-9]+[章节条款则目]"),
-    # 例如：（一）、(2)、1.2
-    re.compile(r"^[（(]?[一二三四五六七八九十0-9]+[）).、]\s*"),
-    # 例如：1. xxx / 1.2 xxx
-    re.compile(r"^\d+(?:\.\d+)*[\s、.]"),
+    # e.g. "Chapter 8" / "Article 12" in Chinese: "\u7b2c8\u7ae0" / "\u7b2c12\u6761"
+    re.compile(r"^\u7b2c[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u4e070-9]+[\u7ae0\u8282\u6761\u6b3e\u5219\u76ee]"),
+    # e.g. "(\u4e00)" / "(2)" / "1.2"
+    re.compile(r"^[\uff08(]?[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u53410-9]+[\uff09).\u3001]\s*"),
+    # e.g. "1. xxx" / "1.2 xxx"
+    re.compile(r"^\d+(?:\.\d+)*[\s\u3001.]"),
 ]
 
 
@@ -71,7 +71,7 @@ def split_text_by_structure_then_window(
     chunk_size: int,
     chunk_overlap: int,
 ) -> list[str]:
-    """版本B切分：先结构分块，再对超长块窗口切分。"""
+    """Variant B splitting: split by structure first, then window-split overlong blocks."""
     if not text:
         return []
 
@@ -119,7 +119,7 @@ def split_documents(
     documents: list[RagDocument],
     profile_name: str | None = None,
 ) -> list[RagDocument]:
-    """把长文本切成适合检索的小片段。"""
+    """Split long text into smaller, retrieval-friendly chunks."""
     profile = get_chunk_profile(profile_name)
     split_docs: list[RagDocument] = []
 
@@ -138,13 +138,12 @@ def split_documents(
 
 
 def format_docs(docs: list[RagDocument]) -> str:
-    """把检索结果拼成 prompt 可直接使用的上下文字符串。"""
+    """Concatenate retrieval results into a context string usable directly in a prompt."""
     if not docs:
         return "No relevant knowledge snippets were retrieved."
 
     context_parts = []
 
-    # 这里把每个片段都带上简单编号。
     for index, doc in enumerate(docs, start=1):
         context_parts.append(f"[Snippet {index}]\n{doc.page_content}")
 
@@ -152,10 +151,9 @@ def format_docs(docs: list[RagDocument]) -> str:
 
 
 def convert_docs_to_sources(docs: list[RagDocument]) -> list[dict]:
-    """把项目内 RagDocument 转成更适合 API 返回的 sources。"""
+    """Convert internal RagDocument objects into API-friendly source records."""
     sources = []
 
-    # 每个检索结果都保留排序、正文和 metadata。
     for index, doc in enumerate(docs, start=1):
         sources.append(
             {
